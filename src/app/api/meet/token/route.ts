@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AccessToken } from 'livekit-server-sdk'
+import { logger } from '../../../../lib/logger'
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,7 +14,7 @@ export async function POST(req: NextRequest) {
     const apiSecret = process.env.LIVEKIT_API_SECRET
 
     if (!apiKey || !apiSecret) {
-      console.error('Missing LIVEKIT_API_KEY or LIVEKIT_API_SECRET')
+      logger.error('Missing LIVEKIT_API_KEY or LIVEKIT_API_SECRET')
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
     }
 
@@ -33,11 +34,12 @@ export async function POST(req: NextRequest) {
 
     const token = await at.toJwt()
 
-    console.log(`[TOKEN] Generated for ${participantName} in room ${roomName}`)
+    logger.info(`[TOKEN] Generated for ${participantName} in room ${roomName}`)
 
     return NextResponse.json({ token })
-  } catch (error: any) {
-    console.error('[TOKEN ERROR]', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Internal server error'
+    logger.error('[TOKEN ERROR]', error)
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

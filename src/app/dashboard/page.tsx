@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { nanoid } from 'nanoid'
 import DashboardLayout from '../../components/DashboardLayout'
+import CreateJoinMeeting from '../../components/CreateJoinMeeting'
 import { useAuth } from '../../contexts/AuthContext'
 import { useMeeting } from '../../contexts/MeetingContext'
 
@@ -11,8 +11,6 @@ export default function DashboardPage() {
   const router = useRouter()
   const { user, logout } = useAuth()
   const { createMeeting } = useMeeting()
-  const [meetingCode, setMeetingCode] = useState('')
-  const [isCreating, setIsCreating] = useState(false)
 
   useEffect(() => {
     if (!user) {
@@ -24,20 +22,8 @@ export default function DashboardPage() {
     return null
   }
 
-  const handleCreateMeeting = async () => {
-    setIsCreating(true)
-    const code = nanoid(10)
-    
-    // Create meeting in context
+  const handleCreateMeeting = (code: string) => {
     createMeeting(code, user.id, user.name, user.role)
-    
-    router.push(`/meet/${code}`)
-  }
-
-  const handleJoinMeeting = () => {
-    if (meetingCode.trim()) {
-      router.push(`/meet/${meetingCode.trim()}`)
-    }
   }
 
   const handleLogout = () => {
@@ -46,7 +32,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <DashboardLayout children={
+    <DashboardLayout>
       <div className="container" style={{ paddingTop: '1rem', maxWidth: '540px' }}>
         {/* User Info */}
         <div style={{ 
@@ -96,56 +82,16 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Create Meeting - Only for teachers or all users */}
-        <div className="card animate-fadeIn">
-          <h2 className="section-title">🚀 Tạo cuộc họp mới</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-            {user.role === 'teacher' 
-              ? 'Tạo phòng học và mời học sinh tham gia' 
-              : 'Tạo phòng họp và mời người khác tham gia'}
-          </p>
-          <button
-            className="btn btn-primary"
-            onClick={handleCreateMeeting}
-            disabled={isCreating}
-          >
-            {isCreating ? (
-              <>
-                <span className="animate-pulse">⏳</span>
-                Đang tạo...
-              </>
-            ) : (
-              <>
-                <span>➕</span>
-                Tạo cuộc họp
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Join Meeting */}
-        <div className="card animate-fadeIn" style={{ animationDelay: '0.1s' }}>
-          <h2 className="section-title">🔗 Tham gia cuộc họp</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-            Nhập mã phòng để tham gia
-          </p>
-          <input
-            type="text"
-            className="input"
-            placeholder="Nhập mã cuộc họp..."
-            value={meetingCode}
-            onChange={(e) => setMeetingCode(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleJoinMeeting()}
-          />
-          <button
-            className="btn btn-secondary"
-            onClick={handleJoinMeeting}
-            disabled={!meetingCode.trim()}
-          >
-            <span>🚪</span>
-            Tham gia
-          </button>
-        </div>
+        {/* Create & Join Meeting */}
+        <CreateJoinMeeting
+          onCreateMeeting={handleCreateMeeting}
+          createTitle="🚀 Tạo cuộc họp mới"
+          createDescription={
+            user.role === 'teacher'
+              ? 'Tạo phòng học và mời học sinh tham gia'
+              : 'Tạo phòng họp và mời người khác tham gia'
+          }
+        />
 
         {/* Features */}
         <div className="card animate-fadeIn" style={{ animationDelay: '0.2s' }}>
@@ -174,6 +120,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-    } />
+    </DashboardLayout>
   )
 }

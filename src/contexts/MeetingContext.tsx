@@ -1,7 +1,9 @@
 'use client'
 
-import { createContext, useContext, useState, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { UserRole } from './AuthContext'
+import { database, BehaviorEntry } from '../lib/database'
+import { logger } from '../lib/logger'
 
 export interface MeetingParticipant {
   userId: string
@@ -18,19 +20,52 @@ export interface Meeting {
 }
 
 interface MeetingContextType {
-  createMeeting: (code: string, userId: string, userName: string, role: UserRole) => void
-  joinMeeting: (code: string, userId: string, userName: string, role: UserRole) => boolean
+  createMeeting: (code: string, userId: string, userName: string, role: UserRole) => Promise<void>
+  joinMeeting: (code: string, userId: string, userName: string, role: UserRole) => Promise<boolean>
   getMeeting: (code: string) => Meeting | null
   isTeacher: (code: string, userId: string) => boolean
   getStudents: (code: string) => MeetingParticipant[]
+  currentMeetingId: string | null
+  setCurrentMeetingId: (id: string | null) => void
+  saveBehavior: (behavior: Omit<BehaviorEntry, 'id' | 'meetingId'>) => Promise<void>
+  getBehaviors: (meetingId: string) => Promise<BehaviorEntry[]>
+  getUserBehaviors: (meetingId: string, userId: string) => Promise<BehaviorEntry[]>
 }
 
 const MeetingContext = createContext<MeetingContextType | undefined>(undefined)
 
+function loadMeetingsFromStorage(): Record<string, Meeting> {
+  if (typeof window === 'undefined') return {}
+  try {
+    return JSON.parse(localStorage.getItem('meetings') || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function saveMeetingsToStorage(data: Record<string, Meeting>): void {
+  if (typeof window === 'undefined') return
+  localStorage.setItem('meetings', JSON.stringify(data))
+}
+
 export function MeetingProvider({ children }: { children: ReactNode }) {
   const [meetings, setMeetings] = useState<Map<string, Meeting>>(new Map())
+  const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null)
+  const [isDbReady, setIsDbReady] = useState(false)
 
-  const createMeeting = (code: string, userId: string, userName: string, role: UserRole) => {
+  // Initialize database
+  useEffect(() => {
+    database.init().then(success => {
+      if (success) {
+        logger.info('[MeetingContext] Database initialized')
+        setIsDbReady(true)
+      } else {
+        logger.error('[MeetingContext] Failed to initialize database')
+      }
+    })
+  }, [])
+
+  const createMeeting = async (code: string, userId: string, userName: string, role: UserRole) => {
     const meeting: Meeting = {
       code,
       creatorId: userId,
@@ -45,21 +80,35 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     
     setMeetings(prev => new Map(prev).set(code, meeting))
     
-    // Store in localStorage
-    const meetingsData = JSON.parse(localStorage.getItem('meetings') || '{}')
+    const meetingsData = loadMeetingsFromStorage()
     meetingsData[code] = meeting
-    localStorage.setItem('meetings', JSON.stringify(meetingsData))
+    saveMeetingsToStorage(meetingsData)
+
+    // Save to IndexedDB
+    if (isDbReady) {
+      const meetingId = `meeting_${code}_${Date.now()}`
+      setCurrentMeetingId(meetingId)
+      
+      await database.saveMeeting({
+        id: meetingId,
+        roomCode: code,
+        teacherId: userId,
+        teacherName: userName,
+        startTime: Date.now(),
+        participantCount: 1
+      })
+      
+      logger.info('[MeetingContext] Meeting saved to DB:', meetingId)
+    }
   }
 
-  const joinMeeting = (code: string, userId: string, userName: string, role: UserRole): boolean => {
-    // Load meeting from localStorage if not in state
+  const joinMeeting = async (code: string, userId: string, userName: string, role: UserRole): Promise<boolean> => {
     let meeting = meetings.get(code)
     
     if (!meeting) {
-      const meetingsData = JSON.parse(localStorage.getItem('meetings') || '{}')
+      const meetingsData = loadMeetingsFromStorage()
       meeting = meetingsData[code]
       
-      // If meeting doesn't exist, create it automatically
       if (!meeting) {
         meeting = {
           code,
@@ -84,32 +133,36 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     }
 
     meeting.participants.push(newParticipant)
-    setMeetings(prev => new Map(prev).set(code, meeting!))
+    setMeetings(prev => new Map(prev).set(code, meeting))
 
-    // Update localStorage
-    const meetingsData = JSON.parse(localStorage.getItem('meetings') || '{}')
+    const meetingsData = loadMeetingsFromStorage()
     meetingsData[code] = meeting
-    localStorage.setItem('meetings', JSON.stringify(meetingsData))
+    saveMeetingsToStorage(meetingsData)
+
+    // Update participant count in DB
+    if (isDbReady && currentMeetingId) {
+      const dbMeeting = await database.getMeeting(currentMeetingId)
+      if (dbMeeting) {
+        dbMeeting.participantCount = meeting.participants.length
+        await database.saveMeeting(dbMeeting)
+      }
+    }
 
     return true
   }
 
   const getMeeting = (code: string): Meeting | null => {
-    let meeting = meetings.get(code)
-    
-    if (!meeting) {
-      const meetingsData = JSON.parse(localStorage.getItem('meetings') || '{}')
-      meeting = meetingsData[code]
-    }
+    const meeting = meetings.get(code)
+    if (meeting) return meeting
 
-    return meeting || null
+    const meetingsData = loadMeetingsFromStorage()
+    return meetingsData[code] || null
   }
 
   const isTeacher = (code: string, userId: string): boolean => {
     const meeting = getMeeting(code)
     if (!meeting) return false
     
-    // Check actual role of the participant, not creator status
     const participant = meeting.participants.find(p => p.userId === userId)
     return participant?.role === 'teacher'
   }
@@ -121,13 +174,46 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     return meeting.participants.filter(p => p.role === 'student')
   }
 
+  // Save behavior to database
+  const saveBehavior = async (behavior: Omit<BehaviorEntry, 'id' | 'meetingId'>) => {
+    if (!isDbReady || !currentMeetingId) {
+      logger.warn('[MeetingContext] Cannot save behavior: DB not ready or no meeting')
+      return
+    }
+
+    const behaviorEntry: BehaviorEntry = {
+      id: `behavior_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      meetingId: currentMeetingId,
+      ...behavior
+    }
+
+    await database.saveBehavior(behaviorEntry)
+  }
+
+  // Get all behaviors for a meeting
+  const getBehaviors = async (meetingId: string): Promise<BehaviorEntry[]> => {
+    if (!isDbReady) return []
+    return database.getBehaviorsByMeeting(meetingId)
+  }
+
+  // Get behaviors for specific user in a meeting
+  const getUserBehaviors = async (meetingId: string, userId: string): Promise<BehaviorEntry[]> => {
+    if (!isDbReady) return []
+    return database.getBehaviorsByUser(meetingId, userId)
+  }
+
   return (
     <MeetingContext.Provider value={{
       createMeeting,
       joinMeeting,
       getMeeting,
       isTeacher,
-      getStudents
+      getStudents,
+      currentMeetingId,
+      setCurrentMeetingId,
+      saveBehavior,
+      getBehaviors,
+      getUserBehaviors
     }}>
       {children}
     </MeetingContext.Provider>

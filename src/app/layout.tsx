@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { AuthProvider } from '../contexts/AuthContext'
 import { MeetingProvider } from '../contexts/MeetingContext'
+import ErrorBoundary from '../components/ErrorBoundary'
 
 export const metadata: Metadata = {
   title: 'Edu Insight Meet',
@@ -15,11 +16,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="vi">
       <body>
-        <AuthProvider>
-          <MeetingProvider>
-            {children}
-          </MeetingProvider>
-        </AuthProvider>
+        <ErrorBoundary>
+          <AuthProvider>
+            <MeetingProvider>
+              {children}
+            </MeetingProvider>
+          </AuthProvider>
+        </ErrorBoundary>
       </body>
     </html>
   )

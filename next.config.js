@@ -6,7 +6,6 @@ const nextConfig = {
     if (isServer) {
       config.externals = config.externals || [];
       config.externals.push({
-        '@mediapipe/tasks-vision': 'commonjs @mediapipe/tasks-vision',
         '@tensorflow-models/pose-detection': 'commonjs @tensorflow-models/pose-detection',
         '@tensorflow/tfjs': 'commonjs @tensorflow/tfjs',
       });

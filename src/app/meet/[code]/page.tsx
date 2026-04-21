@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useAuth } from '../../../contexts/AuthContext'
 import { useMeeting } from '../../../contexts/MeetingContext'
+import { logger } from '../../../lib/logger'
 
 interface DeviceStatus {
   camera: 'checking' | 'ok' | 'error'
@@ -21,7 +22,7 @@ export default function PreJoinPage() {
   const params = useParams()
   const code = params.code as string
   const { user } = useAuth()
-  const { joinMeeting, getMeeting } = useMeeting()
+  const { joinMeeting } = useMeeting()
 
   const [userName, setUserName] = useState('')
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>({
@@ -37,7 +38,6 @@ export default function PreJoinPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
-  // Redirect to auth if not authenticated
   useEffect(() => {
     if (!user) {
       router.push('/auth')
@@ -49,7 +49,7 @@ export default function PreJoinPage() {
   const addLog = useCallback((message: string, type: LogEntry['type'] = 'info') => {
     const time = new Date().toLocaleTimeString()
     setLogs(prev => [...prev.slice(-50), { time, message, type }])
-    console.log(`[${type.toUpperCase()}] ${message}`)
+    logger.debug(`[PreJoin] ${message}`)
   }, [])
 
   useEffect(() => {
@@ -59,7 +59,7 @@ export default function PreJoinPage() {
         streamRef.current.getTracks().forEach(track => track.stop())
       }
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const checkDevices = async () => {
     addLog('Đang kiểm tra thiết bị...', 'info')
@@ -85,8 +85,9 @@ export default function PreJoinPage() {
       const audioDevices = devices.filter(d => d.kind === 'audioinput')
       addLog(`Tìm thấy ${videoDevices.length} camera, ${audioDevices.length} mic`, 'info')
 
-    } catch (err: any) {
-      addLog(`Lỗi: ${err.message}`, 'error')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      addLog(`Lỗi: ${message}`, 'error')
 
       try {
         const videoStream = await navigator.mediaDevices.getUserMedia({ video: true })
@@ -140,17 +141,13 @@ export default function PreJoinPage() {
     setIsJoining(true)
     addLog('Đang tham gia phòng...', 'info')
 
-    // Join meeting in context - will auto-create if doesn't exist
     joinMeeting(code, user.id, user.name, user.role)
     addLog('✓ Đã tham gia phòng', 'success')
 
-    // Don't stop the stream here - just release the reference
-    // The browser will clean up when we navigate away
     if (videoRef.current) {
       videoRef.current.srcObject = null
     }
     
-    // Store settings with role and userId
     sessionStorage.setItem('meetSettings', JSON.stringify({
       userName: user.name,
       cameraEnabled,
@@ -161,7 +158,6 @@ export default function PreJoinPage() {
 
     addLog('Chuyển đến phòng họp...', 'success')
     
-    // Small delay to ensure settings are saved
     await new Promise(resolve => setTimeout(resolve, 50))
     
     router.push(`/meet/${code}/room`)
@@ -260,7 +256,7 @@ export default function PreJoinPage() {
             </button>
           </div>
 
-          {/* User Name Input - Read-only since it's from auth */}
+          {/* User Name Input */}
           <input
             type="text"
             className="input"

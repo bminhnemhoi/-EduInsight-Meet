@@ -1,5 +1,9 @@
-std_behav_update_new
-.git-rewrite
 node_modules
 .next
+.env
+.env.local
+.env*.local
 *.log
+.DS_Store
+coverage/
+.git

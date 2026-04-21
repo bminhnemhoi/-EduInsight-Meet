@@ -3,5 +3,10 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD ./src ./public"
+  "regions": ["sin1"],
+  "env": {
+    "LIVEKIT_API_KEY": "@livekit_api_key",
+    "LIVEKIT_API_SECRET": "@livekit_api_secret",
+    "NEXT_PUBLIC_LIVEKIT_URL": "@next_public_livekit_url"
+  }
 }

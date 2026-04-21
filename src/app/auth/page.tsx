@@ -45,7 +45,7 @@ export default function AuthPage() {
       if (success) {
         router.push('/dashboard')
       }
-    } catch (err) {
+    } catch {
       setError('Đã có lỗi xảy ra')
     } finally {
       setLoading(false)

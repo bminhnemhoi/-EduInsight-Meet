@@ -1,6 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { formatTimeVN } from '../lib/utils'
+
+import { behaviorStore } from '../lib/behaviorStore'
 
 export interface BehaviorHistoryEntry {
     id: string
@@ -10,34 +13,27 @@ export interface BehaviorHistoryEntry {
     type: 'positive' | 'negative' | 'neutral' | 'warning'
 }
 
-// Global history storage (can be replaced with proper state management)
-let historyEntries: BehaviorHistoryEntry[] = []
 let historyListeners: (() => void)[] = []
 
 export function addBehaviorEntry(entry: Omit<BehaviorHistoryEntry, 'id' | 'timestamp'>) {
-    const newEntry: BehaviorHistoryEntry = {
-        ...entry,
-        id: Math.random().toString(36).substr(2, 9),
-        timestamp: new Date()
-    }
-
-    // Avoid duplicate consecutive entries
-    const lastEntry = historyEntries[historyEntries.length - 1]
-    if (lastEntry && lastEntry.label === entry.label) {
-        return
-    }
-
-    historyEntries = [...historyEntries.slice(-49), newEntry]
+    // Already stored in behaviorStore via AIBehaviorDetector's addStudentBehavior
     historyListeners.forEach(listener => listener())
 }
 
 export function clearHistory() {
-    historyEntries = []
+    behaviorStore.clearBehaviors()
     historyListeners.forEach(listener => listener())
 }
 
-export function getHistory() {
-    return historyEntries
+export function getHistory(): BehaviorHistoryEntry[] {
+    const rawBehaviors = behaviorStore.getBehaviors()
+    return rawBehaviors.map(b => ({
+      id: b.timestamp.toString(),
+      timestamp: new Date(b.timestamp),
+      label: b.label,
+      emoji: b.emoji,
+      type: 'neutral' // Map safely
+    }))
 }
 
 interface Props {
@@ -51,24 +47,20 @@ export default function BehaviorHistoryPanel({ maxEntries = 10, showClearButton 
 
     useEffect(() => {
         const updateEntries = () => {
-            setEntries([...historyEntries].reverse().slice(0, maxEntries))
+            setEntries(getHistory().slice(0, maxEntries))
         }
 
         updateEntries()
         historyListeners.push(updateEntries)
 
+        // Poll for updates across components every 2s
+        const pollInterval = setInterval(updateEntries, 2000)
+
         return () => {
             historyListeners = historyListeners.filter(l => l !== updateEntries)
+            clearInterval(pollInterval)
         }
     }, [maxEntries])
-
-    const formatTime = (date: Date) => {
-        return date.toLocaleTimeString('vi-VN', {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-        })
-    }
 
     return (
         <div className="history-panel">
@@ -135,7 +127,7 @@ export default function BehaviorHistoryPanel({ maxEntries = 10, showClearButton 
                                 {entries.map((entry) => (
                                     <tr key={entry.id}>
                                         <td style={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>
-                                            {formatTime(entry.timestamp)}
+                                            {formatTimeVN(entry.timestamp)}
                                         </td>
                                         <td>
                                             <span className={`history-badge ${entry.type}`}>

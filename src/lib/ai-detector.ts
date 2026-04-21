@@ -1,6 +1,7 @@
 // AI Behavior Detector using TensorFlow.js MoveNet
 import * as tf from '@tensorflow/tfjs'
 import * as poseDetection from '@tensorflow-models/pose-detection'
+import { logger } from './logger'
 
 export interface BehaviorResult {
   label: string
@@ -29,14 +30,13 @@ class AIDetector {
     this.isInitializing = true
     
     try {
-      console.log('[AI] Setting up TensorFlow backend...')
+      logger.info('[AI] Setting up TensorFlow backend...')
       
       // Set backend to webgl (more compatible than webgpu)
       await tf.setBackend('webgl')
       await tf.ready()
       
-      console.log('[AI] TensorFlow ready, backend:', tf.getBackend())
-      console.log('[AI] Initializing MoveNet...')
+      logger.info('[AI] TensorFlow ready, backend:', tf.getBackend())
       
       const model = poseDetection.SupportedModels.MoveNet
       this.detector = await poseDetection.createDetector(model, {
@@ -45,10 +45,10 @@ class AIDetector {
       
       this.isInitialized = true
       this.isInitializing = false
-      console.log('[AI] MoveNet initialized successfully!')
+      logger.info('[AI] MoveNet initialized successfully!')
       return true
     } catch (err) {
-      console.error('[AI] Failed to initialize:', err)
+      logger.error('[AI] Failed to initialize:', err)
       this.isInitializing = false
       return false
     }
@@ -76,7 +76,7 @@ class AIDetector {
       const keypoints = poses[0].keypoints
       return this.analyzeBehavior(keypoints)
     } catch (err) {
-      console.error('[AI] Detection error:', err)
+      logger.error('[AI] Detection error:', err)
       return null
     }
   }

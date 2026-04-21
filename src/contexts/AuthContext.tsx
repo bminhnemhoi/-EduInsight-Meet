@@ -11,6 +11,10 @@ export interface User {
   role: UserRole
 }
 
+interface StoredUser extends User {
+  password: string
+}
+
 interface AuthContextType {
   user: User | null
   login: (email: string, password: string) => Promise<boolean>
@@ -30,7 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (storedUser) {
       try {
         setUser(JSON.parse(storedUser))
-      } catch (e) {
+      } catch {
         localStorage.removeItem('user')
       }
     }
@@ -40,15 +44,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // Get existing users
       const usersStr = localStorage.getItem('users') || '[]'
-      const users = JSON.parse(usersStr)
+      const users: StoredUser[] = JSON.parse(usersStr)
       
       // Check if email exists
-      if (users.some((u: any) => u.email === email)) {
+      if (users.some((u) => u.email === email)) {
         return false
       }
 
       // Create new user
-      const newUser: User & { password: string } = {
+      const newUser: StoredUser = {
         id: Date.now().toString(),
         name,
         email,
@@ -59,13 +63,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       users.push(newUser)
       localStorage.setItem('users', JSON.stringify(users))
 
-      // Set current user
+      // Set current user (without password)
       const { password: _, ...userWithoutPassword } = newUser
       setUser(userWithoutPassword)
       localStorage.setItem('user', JSON.stringify(userWithoutPassword))
 
       return true
-    } catch (e) {
+    } catch {
       return false
     }
   }
@@ -73,9 +77,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       const usersStr = localStorage.getItem('users') || '[]'
-      const users = JSON.parse(usersStr)
+      const users: StoredUser[] = JSON.parse(usersStr)
       
-      const foundUser = users.find((u: any) => 
+      const foundUser = users.find((u) => 
         u.email === email && u.password === password
       )
 
@@ -88,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('user', JSON.stringify(userWithoutPassword))
 
       return true
-    } catch (e) {
+    } catch {
       return false
     }
   }

@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { getInitials, classifyBehavior, formatTimeVN, formatTimeShortVN } from '../lib/utils'
+import { behaviorStore } from '../lib/behaviorStore'
 
 export interface StudentBehavior {
   userId: string
@@ -17,11 +19,10 @@ export interface Participant {
   name?: string
 }
 
-let studentBehaviors: StudentBehavior[] = []
 let listeners: Array<() => void> = []
 
 export function addStudentBehavior(behavior: StudentBehavior) {
-  studentBehaviors = [behavior, ...studentBehaviors.slice(0, 99)] // Keep last 100
+  behaviorStore.addBehavior(behavior)
   listeners.forEach(listener => listener())
 }
 
@@ -33,7 +34,7 @@ export function subscribeToStudentBehaviors(listener: () => void) {
 }
 
 export function getStudentBehaviors() {
-  return studentBehaviors
+  return behaviorStore.getBehaviors()
 }
 
 interface Props {
@@ -57,8 +58,6 @@ export default function StudentsBehaviorPanel({ participants = [] }: Props) {
   // Get unique students from behaviors with their latest status
   const studentsMap = new Map<string, StudentBehavior>()
   
-  // Iterate through behaviors from most recent to oldest
-  // Only keep the first (most recent) behavior for each student
   behaviors.forEach(behavior => {
     if (!studentsMap.has(behavior.userId)) {
       studentsMap.set(behavior.userId, behavior)
@@ -66,10 +65,8 @@ export default function StudentsBehaviorPanel({ participants = [] }: Props) {
   })
 
   // Merge participants from LiveKit with behaviors
-  // Show all participants, even those without behaviors yet
   participants.forEach(participant => {
     if (!studentsMap.has(participant.sid)) {
-      // Add participant without behavior data
       studentsMap.set(participant.sid, {
         userId: participant.sid,
         userName: participant.name || participant.identity,
@@ -82,29 +79,14 @@ export default function StudentsBehaviorPanel({ participants = [] }: Props) {
   })
 
   const allStudents = Array.from(studentsMap.values())
-  console.log('[StudentsBehaviorPanel] Tổng số học sinh (bao gồm chưa mở cam):', allStudents.length)
-  console.log('[StudentsBehaviorPanel] Số participants từ LiveKit:', participants.length)
-  console.log('[StudentsBehaviorPanel] Behaviors:', behaviors.length)
 
-  // Calculate statistics based on latest behavior for each student
+  // Calculate statistics using shared utility
   const stats = {
-    focused: allStudents.filter(s => 
-      s.label === 'Tập trung' || 
-      s.label === 'Đang lắng nghe' || 
-      s.label === 'Giơ tay' ||
-      s.label === 'Gật đầu'
-    ).length,
-    distracted: allStudents.filter(s => 
-      s.label === 'Mất tập trung' || 
-      s.label === 'Cúi đầu' ||
-      s.label === 'Nghiêng đầu' ||
-      s.label === 'Lắc đầu'
-    ).length,
-    sleeping: allStudents.filter(s => s.label === 'Đang ngủ' || s.label === 'Buồn ngủ').length,
+    focused: allStudents.filter(s => classifyBehavior(s.label) === 'focused').length,
+    distracted: allStudents.filter(s => classifyBehavior(s.label) === 'distracted').length,
+    sleeping: allStudents.filter(s => classifyBehavior(s.label) === 'sleeping').length,
     total: allStudents.length
   }
-
-  console.log('[StudentsBehaviorPanel] Stats:', stats)
 
   // Get student history for detail view
   const getStudentHistory = (userId: string) => {
@@ -115,19 +97,9 @@ export default function StudentsBehaviorPanel({ participants = [] }: Props) {
   const getStudentStats = (userId: string) => {
     const history = behaviors.filter(b => b.userId === userId)
     const total = history.length
-    const focused = history.filter(h => 
-      h.label === 'Tập trung' || 
-      h.label === 'Đang lắng nghe' || 
-      h.label === 'Giơ tay' ||
-      h.label === 'Gật đầu'
-    ).length
-    const distracted = history.filter(h => 
-      h.label === 'Mất tập trung' || 
-      h.label === 'Cúi đầu' ||
-      h.label === 'Nghiêng đầu' ||
-      h.label === 'Lắc đầu'
-    ).length
-    const sleeping = history.filter(h => h.label === 'Đang ngủ' || h.label === 'Buồn ngủ').length
+    const focused = history.filter(h => classifyBehavior(h.label) === 'focused').length
+    const distracted = history.filter(h => classifyBehavior(h.label) === 'distracted').length
+    const sleeping = history.filter(h => classifyBehavior(h.label) === 'sleeping').length
 
     return {
       total,
@@ -137,18 +109,14 @@ export default function StudentsBehaviorPanel({ participants = [] }: Props) {
     }
   }
 
-  // Get first letter for avatar
-  const getInitials = (name: string) => {
-    return name.charAt(0).toUpperCase()
-  }
-
   return (
     <div style={{
       position: 'fixed',
       top: 70,
       right: 16,
       zIndex: 1000,
-      width: isExpanded ? (selectedStudent ? '420px' : '360px') : 'auto',
+      width: isExpanded ? '100%' : 'auto',
+      maxWidth: isExpanded ? (selectedStudent ? '420px' : '360px') : '100vw',
       maxHeight: 'calc(100vh - 100px)',
       background: 'var(--bg-primary)',
       borderRadius: '16px',
@@ -261,9 +229,8 @@ export default function StudentsBehaviorPanel({ participants = [] }: Props) {
             </div>
           </div>
 
-          {/* Student List */}
           <div style={{
-            maxHeight: '450px',
+            maxHeight: 'min(450px, 60vh)',
             overflowY: 'auto',
             padding: '0.5rem'
           }}>
@@ -283,6 +250,7 @@ export default function StudentsBehaviorPanel({ participants = [] }: Props) {
                 <div
                   key={student.userId}
                   onClick={() => setSelectedStudent(student)}
+                  className="student-card"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -294,14 +262,6 @@ export default function StudentsBehaviorPanel({ participants = [] }: Props) {
                     border: `2px solid ${student.color}40`,
                     cursor: 'pointer',
                     transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateX(-4px)'
-                    e.currentTarget.style.boxShadow = 'var(--shadow-md)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateX(0)'
-                    e.currentTarget.style.boxShadow = 'none'
                   }}
                 >
                   {/* Avatar with initials */}
@@ -362,10 +322,7 @@ export default function StudentsBehaviorPanel({ participants = [] }: Props) {
                       fontSize: '0.625rem',
                       color: 'var(--text-muted)'
                     }}>
-                      {new Date(student.timestamp).toLocaleTimeString('vi-VN', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
+                      {formatTimeShortVN(student.timestamp)}
                     </div>
                     <div style={{
                       fontSize: '0.625rem',
@@ -575,11 +532,7 @@ export default function StudentsBehaviorPanel({ participants = [] }: Props) {
                           color: 'var(--text-muted)',
                           marginTop: '0.125rem'
                         }}>
-                          {new Date(h.timestamp).toLocaleTimeString('vi-VN', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit'
-                          })}
+                          {formatTimeVN(h.timestamp)}
                         </div>
                       </div>
                     </div>
