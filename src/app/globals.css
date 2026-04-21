@@ -547,3 +547,54 @@ body {
   align-items: center;
   justify-content: center;
 }
+
+
+/* Mobile Video Grid Fixes */
+@media (max-width: 768px) {
+  /* Video grid full width on mobile */
+  .dashboard-main {
+    padding: 0.5rem !important;
+  }
+  
+  /* Video containers */
+  [data-lk-participant-sid] {
+    min-height: 200px !important;
+    aspect-ratio: 16/9 !important;
+  }
+  
+  /* Video tracks full size */
+  video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
+  
+  /* Hide behavior panel on mobile by default */
+  .behavior-panel {
+    display: none;
+  }
+  
+  /* Control bar responsive */
+  .lk-control-bar {
+    padding: 0.5rem !important;
+    gap: 0.5rem !important;
+  }
+  
+  .lk-control-bar button {
+    width: 48px !important;
+    height: 48px !important;
+  }
+}
+
+/* Laptop - Full width video */
+@media (min-width: 769px) {
+  .dashboard-main {
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+  
+  /* Video grid responsive */
+  [style*="gridTemplateColumns"] {
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)) !important;
+  }
+}

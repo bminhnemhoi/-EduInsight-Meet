@@ -33,8 +33,9 @@ export default function VideoGrid() {
       gap: '1rem',
       padding: '1rem',
       height: 'calc(100vh - 150px)',
-      maxWidth: hasScreenShare ? '100%' : '1200px',
-      margin: '0 auto'
+      width: '100%',
+      maxWidth: '100%',
+      margin: '0'
     }}>
       {/* Screen Share - Full width at top if present */}
       {screenTracks.map((track) => (
@@ -83,11 +84,12 @@ export default function VideoGrid() {
       {/* Video Grid */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: participants.length > 1 ? '1fr 1fr' : '1fr',
+        gridTemplateColumns: participants.length > 1 ? 'repeat(auto-fit, minmax(300px, 1fr))' : '1fr',
         gap: '1rem',
         flex: 1,
         height: hasScreenShare ? '35vh' : 'auto',
-        overflowY: hasScreenShare ? 'auto' : 'visible'
+        overflowY: hasScreenShare ? 'auto' : 'visible',
+        width: '100%'
       }}>
       {/* Show local participant placeholder if no video */}
       {localParticipant && !localHasVideo && (
@@ -173,7 +175,8 @@ export default function VideoGrid() {
               ? '3px solid var(--accent-primary)'
               : '1px solid var(--border-color)',
             boxShadow: 'var(--shadow-lg)',
-            minHeight: '300px'
+            minHeight: '300px',
+            aspectRatio: '16/9'
           }}
         >
           <VideoTrack
