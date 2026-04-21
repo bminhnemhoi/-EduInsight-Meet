@@ -192,26 +192,30 @@ export default function AIBehaviorDetector({ enabled = true, userId, userName, p
       flexDirection: 'column',
       gap: 8
     }}>
-      {/* AI Status Badge */}
-      {isAIOn && behavior && !isLoading && (
+      {/* AI Status Badge - Luôn hiện */}
+      {isAIOn && !isLoading && (
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '0.5rem',
-            padding: '0.625rem 1rem',
-            borderRadius: '12px',
-            fontSize: '0.875rem',
+            gap: '0.75rem',
+            padding: '0.75rem 1.25rem',
+            borderRadius: '16px',
+            fontSize: '0.9375rem',
             fontWeight: 600,
-            background: 'var(--bg-primary)',
-            color: behavior.color,
-            border: `2px solid ${behavior.color}40`,
-            boxShadow: 'var(--shadow-md)',
-            animation: 'fadeIn 0.3s ease'
+            background: behavior ? `linear-gradient(135deg, ${behavior.color}15 0%, ${behavior.color}25 100%)` : 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.15) 100%)',
+            color: behavior ? behavior.color : '#3b82f6',
+            border: `2px solid ${behavior ? behavior.color + '60' : 'rgba(59, 130, 246, 0.4)'}`,
+            boxShadow: behavior ? `0 8px 20px ${behavior.color}30` : '0 8px 20px rgba(59, 130, 246, 0.2)',
+            animation: 'fadeIn 0.3s ease, pulse 2s ease-in-out infinite',
+            backdropFilter: 'blur(10px)'
           }}
         >
-          <span style={{ fontSize: '1.25rem' }}>{behavior.emoji}</span>
-          <span>{behavior.label}</span>
+          <span style={{ 
+            fontSize: '1.5rem',
+            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))'
+          }}>{behavior ? behavior.emoji : '🤖'}</span>
+          <span style={{ letterSpacing: '0.01em' }}>{behavior ? behavior.label : 'Đang phân tích...'}</span>
         </div>
       )}
 
@@ -221,19 +225,20 @@ export default function AIBehaviorDetector({ enabled = true, userId, userName, p
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '0.5rem',
-            padding: '0.625rem 1rem',
-            borderRadius: '12px',
-            fontSize: '0.875rem',
+            gap: '0.75rem',
+            padding: '0.75rem 1.25rem',
+            borderRadius: '16px',
+            fontSize: '0.9375rem',
             fontWeight: 600,
-            background: 'var(--bg-primary)',
-            color: '#6b7280',
-            border: '2px solid rgba(107, 114, 128, 0.3)',
-            boxShadow: 'var(--shadow-md)'
+            background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(124, 58, 237, 0.15) 100%)',
+            color: '#8b5cf6',
+            border: '2px solid rgba(139, 92, 246, 0.4)',
+            boxShadow: '0 8px 20px rgba(139, 92, 246, 0.2)',
+            backdropFilter: 'blur(10px)'
           }}
         >
-          <span style={{ fontSize: '1.25rem', animation: 'spin 1s linear infinite' }}>⏳</span>
-          <span>Đang tải AI...</span>
+          <span style={{ fontSize: '1.5rem', animation: 'spin 1s linear infinite' }}>⏳</span>
+          <span>Đang khởi động AI...</span>
         </div>
       )}
 
@@ -257,20 +262,36 @@ export default function AIBehaviorDetector({ enabled = true, userId, userName, p
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '0.5rem',
-          background: isAIOn ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-secondary)',
-          border: `1px solid ${isAIOn ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-color)'}`,
-          borderRadius: '10px',
-          padding: '0.5rem 0.875rem',
-          color: isAIOn ? 'var(--success)' : 'var(--text-muted)',
-          fontSize: '0.75rem',
-          fontWeight: 500,
+          justifyContent: 'center',
+          gap: '0.625rem',
+          background: isAIOn 
+            ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.2) 100%)' 
+            : 'linear-gradient(135deg, rgba(107, 114, 128, 0.1) 0%, rgba(75, 85, 99, 0.15) 100%)',
+          border: `2px solid ${isAIOn ? 'rgba(16, 185, 129, 0.5)' : 'rgba(107, 114, 128, 0.3)'}`,
+          borderRadius: '14px',
+          padding: '0.625rem 1.125rem',
+          color: isAIOn ? '#10b981' : '#6b7280',
+          fontSize: '0.875rem',
+          fontWeight: 600,
           cursor: 'pointer',
-          boxShadow: 'var(--shadow-sm)',
-          transition: 'all 0.2s'
+          boxShadow: isAIOn ? '0 4px 12px rgba(16, 185, 129, 0.25)' : '0 2px 8px rgba(0, 0, 0, 0.1)',
+          transition: 'all 0.3s ease',
+          backdropFilter: 'blur(10px)'
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = 'translateY(-2px)'
+          e.currentTarget.style.boxShadow = isAIOn 
+            ? '0 6px 16px rgba(16, 185, 129, 0.35)' 
+            : '0 4px 12px rgba(0, 0, 0, 0.15)'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = 'translateY(0)'
+          e.currentTarget.style.boxShadow = isAIOn 
+            ? '0 4px 12px rgba(16, 185, 129, 0.25)' 
+            : '0 2px 8px rgba(0, 0, 0, 0.1)'
         }}
       >
-        <span>🤖</span>
+        <span style={{ fontSize: '1.125rem' }}>🤖</span>
         <span>AI {isAIOn ? 'ON' : 'OFF'}</span>
       </button>
     </div>

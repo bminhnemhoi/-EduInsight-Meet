@@ -29,17 +29,13 @@ export function AIDetectionManager({ settings }: { settings: MeetSettings }) {
   const participants = useParticipants()
   const { localParticipant } = useLocalParticipant()
   
-  // Chỉ chạy AI khi có ≥2 người trong phòng
-  const shouldRunAI = participants.length >= 2
-  
-  if (!shouldRunAI) {
-    return null
-  }
+  // AI luôn hiển thị VÀ phân tích ngay cả khi 1 người
+  const shouldAnalyze = true
   
   if (settings.userRole === 'student') {
     return (
       <AIBehaviorDetector 
-        enabled={true} 
+        enabled={shouldAnalyze} 
         userId={settings.userId}
         userName={settings.userName}
       />
@@ -55,7 +51,7 @@ export function AIDetectionManager({ settings }: { settings: MeetSettings }) {
           return (
             <AIBehaviorDetector
               key={participant.sid}
-              enabled={true}
+              enabled={shouldAnalyze}
               userId={participant.sid}
               userName={participant.name || participant.identity}
               participantSid={participant.sid}
