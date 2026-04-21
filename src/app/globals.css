@@ -614,3 +614,26 @@ body {
     grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)) !important;
   }
 }
+
+/* Control Toggle Buttons - Enhanced */
+.control-toggle-btn:hover {
+  transform: translateY(-4px) scale(1.05);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.25) !important;
+  border-color: rgba(59, 130, 246, 0.5) !important;
+}
+
+.control-toggle-btn:active {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.control-toggle-btn[data-lk-enabled="false"] {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.15) 100%) !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  color: #ef4444 !important;
+}
+
+.control-toggle-btn[data-lk-enabled="true"] {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.15) 100%) !important;
+  border-color: rgba(16, 185, 129, 0.4) !important;
+  color: #10b981 !important;
+}
