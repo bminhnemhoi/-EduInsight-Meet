@@ -10,8 +10,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing roomName or participantName' }, { status: 400 })
     }
 
-    const apiKey = process.env.LIVEKIT_API_KEY
-    const apiSecret = process.env.LIVEKIT_API_SECRET
+    const apiKey = process.env.LIVEKIT_API_KEY?.trim()
+    const apiSecret = process.env.LIVEKIT_API_SECRET?.trim()
 
     if (!apiKey || !apiSecret) {
       logger.error('Missing LIVEKIT_API_KEY or LIVEKIT_API_SECRET')
