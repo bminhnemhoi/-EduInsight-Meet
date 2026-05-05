@@ -1,107 +1,155 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useRoomContext } from '@livekit/components-react'
 import { aiDetector, BehaviorResult } from '../lib/ai-detector'
 import { logger } from '../lib/logger'
-import { addBehaviorEntry } from './BehaviorHistoryPanel'
-import { addStudentBehavior } from './StudentsBehaviorPanel'
 import { settingsStore } from '../lib/settingsStore'
 import { useMeeting } from '../contexts/MeetingContext'
+import { ConnectionState } from 'livekit-client'
+import {
+  BEHAVIOR_TOPIC,
+  encodeBehaviorMessage,
+  type BehaviorMessageV1,
+} from '../lib/behaviorChannel'
 
 interface Props {
   enabled?: boolean
   userId?: string
   userName?: string
-  participantSid?: string
 }
 
-export default function AIBehaviorDetector({ enabled = true, userId, userName, participantSid }: Props) {
+/**
+ * Runs MoveNet on the LOCAL participant's own video and broadcasts the
+ * resulting behavior label to the room over a LiveKit data channel.
+ *
+ * Only writes to IndexedDB on label transitions to avoid hammering storage.
+ * Teachers should not mount this for remote participants — they receive
+ * labels via BehaviorReceiver instead.
+ */
+export default function AIBehaviorDetector({
+  enabled = true,
+  userId,
+  userName,
+}: Props) {
   const [behavior, setBehavior] = useState<BehaviorResult | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isAIOn, setIsAIOn] = useState(() => {
-     // Respect user settings initially, fallback to props
-     if (typeof window !== 'undefined') {
-        const settings = settingsStore.getSettings()
-        return settings.aiEnabled && enabled
-     }
-     return enabled
+    if (typeof window !== 'undefined') {
+      const settings = settingsStore.getSettings()
+      return settings.aiEnabled && enabled
+    }
+    return enabled
   })
+
+  // React to settings changes from the Settings page in real time.
+  useEffect(() => {
+    return settingsStore.subscribe((s) => {
+      setIsAIOn(s.aiEnabled && enabled)
+      // Sensitivity is read on each detection via settingsStore.getSettings(),
+      // so no state update needed here — the next frame will pick it up.
+    })
+  }, [enabled])
   const [error, setError] = useState<string | null>(null)
+
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const intervalRef = useRef<NodeJS.Timeout | null>(null)
-  
-  // Get meeting context for saving behaviors
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const committedLabelRef = useRef<string | null>(null)
+  // Adaptive interval: starts at 500ms, scales up if pose inference takes
+  // long (slow device or thermal throttle), back down when fast.
+  const intervalMsRef = useRef(500)
+  const MIN_INTERVAL = 350
+  const MAX_INTERVAL = 1500
+
+  const room = useRoomContext()
   const { saveBehavior } = useMeeting()
 
+  // Find the local participant's own video element. This is unambiguous:
+  // LiveKit always mutes its own published video, so we just look for a video
+  // tag whose srcObject is a local stream.
   const findLocalVideo = useCallback((): HTMLVideoElement | null => {
     const videos = Array.from(document.querySelectorAll('video'))
-
-    for (let i = 0; i < videos.length; i++) {
-      const video = videos[i]
-
-      if (!video.srcObject || video.readyState < 2 || video.videoWidth === 0) {
-        continue
-      }
-
-      if (participantSid) {
-        const container = video.closest('[data-lk-participant-sid]') ||
-          video.closest('[data-lk-participant]') ||
-          video.closest('[data-lk-participant-identity]')
-
-        if (container) {
-          const sid = container.getAttribute('data-lk-participant-sid') ||
-            container.getAttribute('data-lk-participant') ||
-            container.getAttribute('data-lk-participant-identity')
-
-          if (sid === participantSid) return video
-        }
-
-        const videoSid = video.getAttribute('data-lk-participant-sid') ||
-          video.getAttribute('data-participant-sid') ||
-          video.getAttribute('data-participant-identity')
-
-        if (videoSid === participantSid) return video
-
-        if (!video.muted && i > 0) return video
-      } else {
-        if (video.muted) return video
-        if (i === 0) return video
+    for (const video of videos) {
+      if (
+        video.srcObject &&
+        video.muted && // local published track is always muted in <video>
+        video.readyState >= 2 &&
+        video.videoWidth > 0
+      ) {
+        return video
       }
     }
     return null
-  }, [participantSid])
+  }, [])
+
+  const broadcastBehavior = useCallback(
+    (result: BehaviorResult, uid: string, uname: string) => {
+      // Skip if room is no longer connected. Race window: user clicks
+      // disconnect → room starts tearing down → AI loop still ticking →
+      // publishData would throw "PC manager is closed".
+      if (room.state !== ConnectionState.Connected) return
+
+      try {
+        const msg: BehaviorMessageV1 = {
+          v: 1,
+          topic: BEHAVIOR_TOPIC,
+          userId: uid,
+          userName: uname,
+          label: result.label,
+          emoji: result.emoji,
+          color: result.color,
+          type: result.type,
+          timestamp: Date.now(),
+        }
+        const payload = encodeBehaviorMessage(msg)
+        const p = room.localParticipant.publishData(payload, {
+          reliable: false,
+          topic: BEHAVIOR_TOPIC,
+        })
+        // publishData returns a promise; swallow rejections that arrive
+        // after a connection drop so they don't propagate to React's
+        // unhandled-rejection handler.
+        if (p && typeof (p as Promise<unknown>).catch === 'function') {
+          ;(p as Promise<unknown>).catch((err) => {
+            logger.warn('[AI] publishData rejected:', err)
+          })
+        }
+      } catch (err) {
+        logger.warn('[AI] Broadcast failed:', err)
+      }
+    },
+    [room]
+  )
 
   const runDetection = useCallback(async () => {
     if (!isAIOn) return
-
     const video = videoRef.current || findLocalVideo()
     if (!video) return
-
     videoRef.current = video
 
+    const t0 = performance.now()
     const result = await aiDetector.detect(video)
+    const elapsed = performance.now() - t0
+
+    // Adapt next interval based on inference cost: aim to keep CPU under
+    // ~30% by spacing inferences 3× the cost. Clamp to sane bounds.
+    const target = Math.max(MIN_INTERVAL, Math.min(MAX_INTERVAL, elapsed * 3))
+    // Smooth so adaptation isn't jumpy.
+    intervalMsRef.current = intervalMsRef.current * 0.7 + target * 0.3
+
     if (!result) return
 
     setBehavior(result)
 
-    // Add to in-memory history (for real-time display)
-    addBehaviorEntry({
-      label: result.label,
-      emoji: result.emoji,
-      type: result.type
-    })
+    // Commit transition immediately when the label changes — no smoothing
+    // or confidence gate, so the badge tracks MoveNet output as quickly as
+    // it can detect.
+    if (result.label === committedLabelRef.current) return
+    committedLabelRef.current = result.label
 
     if (userId && userName) {
-      addStudentBehavior({
-        userId,
-        userName,
-        label: result.label,
-        emoji: result.emoji,
-        color: result.color,
-        timestamp: Date.now()
-      })
-      
-      // Save to database (persistent storage)
+      broadcastBehavior(result, userId, userName)
+
       await saveBehavior({
         userId,
         userName,
@@ -109,190 +157,202 @@ export default function AIBehaviorDetector({ enabled = true, userId, userName, p
         emoji: result.emoji,
         color: result.color,
         type: result.type,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
     }
-  }, [isAIOn, findLocalVideo, userId, userName, saveBehavior])
+  }, [isAIOn, findLocalVideo, userId, userName, saveBehavior, broadcastBehavior])
 
   useEffect(() => {
     if (!isAIOn) {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
       }
       return
+    }
+
+    let cancelled = false
+
+    // Stop the loop the moment the room disconnects. Without this the loop
+    // keeps ticking briefly while LiveKit tears down its peer connection,
+    // and any in-flight publishData throws "PC manager is closed".
+    const onDisconnected = () => {
+      cancelled = true
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
+    }
+    room.on('disconnected', onDisconnected)
+
+    // Self-rescheduling loop using setTimeout so each tick can use the latest
+    // adaptive interval value.
+    const tick = async () => {
+      if (cancelled) return
+      await runDetection()
+      if (cancelled) return
+      timeoutRef.current = setTimeout(tick, intervalMsRef.current)
     }
 
     const init = async () => {
       setIsLoading(true)
       setError(null)
-
       try {
         const success = await aiDetector.initialize()
         if (!success) {
-          setError('Không thể khởi tạo AI')
-          setIsLoading(false)
+          if (!cancelled) {
+            setError('Không thể khởi tạo AI')
+            setIsLoading(false)
+          }
           return
         }
-
-        logger.info('[AI] Detector ready')
+        if (cancelled) return
         setIsLoading(false)
+        logger.info('[AI] Detector ready')
 
-        let retryCount = 0
+        let retries = 0
         const maxRetries = 10
-
         const waitForVideo = () => {
+          if (cancelled) return
           const video = findLocalVideo()
-
           if (video) {
             videoRef.current = video
-            runDetection()
-            intervalRef.current = setInterval(runDetection, 500)
+            tick()
+          } else if (retries++ < maxRetries) {
+            setTimeout(waitForVideo, 1000)
           } else {
-            retryCount++
-            if (retryCount < maxRetries) {
-              setTimeout(waitForVideo, 1000)
-            } else {
-              logger.warn('[AI] Could not find video after', maxRetries, 'retries')
-            }
+            logger.warn('[AI] Could not find local video after retries')
           }
         }
-
         setTimeout(waitForVideo, 2000)
       } catch (err) {
         logger.error('[AI] Init error:', err)
-        setError('Lỗi khởi tạo AI')
-        setIsLoading(false)
+        if (!cancelled) {
+          setError('Lỗi khởi tạo AI')
+          setIsLoading(false)
+        }
       }
     }
-
     init()
 
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-      }
+      cancelled = true
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+      room.off('disconnected', onDisconnected)
     }
   }, [isAIOn]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleAI = () => {
-    setIsAIOn(!isAIOn)
-    if (isAIOn) {
-      setBehavior(null)
-    }
+    setIsAIOn((prev) => {
+      const next = !prev
+      if (!next) {
+        setBehavior(null)
+        committedLabelRef.current = null
+      }
+      return next
+    })
   }
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: participantSid ? -9999 : 70,
-      left: participantSid ? -9999 : 16,
-      zIndex: participantSid ? -1 : 1000,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 8
-    }}>
-      {/* AI Status Badge - Luôn hiện */}
+    <div
+      style={{
+        position: 'fixed',
+        bottom: 110,
+        left: 16,
+        zIndex: 1000,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        alignItems: 'flex-start',
+      }}
+    >
       {isAIOn && !isLoading && (
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '0.75rem',
-            padding: '0.75rem 1.25rem',
-            borderRadius: '16px',
-            fontSize: '0.9375rem',
+            gap: '0.5rem',
+            padding: '0.375rem 0.75rem',
+            borderRadius: '999px',
+            fontSize: '0.8125rem',
             fontWeight: 600,
-            background: behavior ? `linear-gradient(135deg, ${behavior.color}15 0%, ${behavior.color}25 100%)` : 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.15) 100%)',
+            background: behavior
+              ? `${behavior.color}1a`
+              : 'rgba(59, 130, 246, 0.12)',
             color: behavior ? behavior.color : '#3b82f6',
-            border: `2px solid ${behavior ? behavior.color + '60' : 'rgba(59, 130, 246, 0.4)'}`,
-            boxShadow: behavior ? `0 8px 20px ${behavior.color}30` : '0 8px 20px rgba(59, 130, 246, 0.2)',
-            animation: 'fadeIn 0.3s ease, pulse 2s ease-in-out infinite',
-            backdropFilter: 'blur(10px)'
+            border: `1px solid ${behavior ? behavior.color + '55' : 'rgba(59, 130, 246, 0.35)'}`,
+            backdropFilter: 'blur(8px)',
+            transition: 'background 0.25s ease, color 0.25s ease, border-color 0.25s ease',
           }}
         >
-          <span style={{ 
-            fontSize: '1.5rem',
-            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))'
-          }}>{behavior ? behavior.emoji : '🤖'}</span>
-          <span style={{ letterSpacing: '0.01em' }}>{behavior ? behavior.label : 'Đang phân tích...'}</span>
+          <span style={{ fontSize: '1rem' }}>
+            {behavior ? behavior.emoji : '🤖'}
+          </span>
+          <span>{behavior ? behavior.label : 'Đang phân tích...'}</span>
         </div>
       )}
 
-      {/* Loading State */}
       {isAIOn && isLoading && (
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '0.75rem',
-            padding: '0.75rem 1.25rem',
-            borderRadius: '16px',
-            fontSize: '0.9375rem',
+            gap: '0.5rem',
+            padding: '0.375rem 0.75rem',
+            borderRadius: '999px',
+            fontSize: '0.8125rem',
             fontWeight: 600,
-            background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(124, 58, 237, 0.15) 100%)',
+            background: 'rgba(139, 92, 246, 0.12)',
             color: '#8b5cf6',
-            border: '2px solid rgba(139, 92, 246, 0.4)',
-            boxShadow: '0 8px 20px rgba(139, 92, 246, 0.2)',
-            backdropFilter: 'blur(10px)'
+            border: '1px solid rgba(139, 92, 246, 0.35)',
+            backdropFilter: 'blur(8px)',
           }}
         >
-          <span style={{ fontSize: '1.5rem', animation: 'spin 1s linear infinite' }}>⏳</span>
+          <span style={{ fontSize: '0.9375rem', animation: 'spin 1s linear infinite' }}>
+            ⏳
+          </span>
           <span>Đang khởi động AI...</span>
         </div>
       )}
 
-      {/* Error State */}
       {error && (
-        <div style={{
-          padding: '0.5rem 1rem',
-          borderRadius: '12px',
-          fontSize: '0.75rem',
-          background: 'rgba(239, 68, 68, 0.1)',
-          color: 'var(--danger)',
-          border: '1px solid rgba(239, 68, 68, 0.3)'
-        }}>
+        <div
+          style={{
+            padding: '0.5rem 1rem',
+            borderRadius: '12px',
+            fontSize: '0.75rem',
+            background: 'rgba(239, 68, 68, 0.1)',
+            color: 'var(--danger)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+          }}
+        >
           {error}
         </div>
       )}
 
-      {/* AI Toggle Button */}
       <button
         onClick={toggleAI}
+        title={isAIOn ? 'Tắt AI nhận diện' : 'Bật AI nhận diện'}
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          gap: '0.625rem',
-          background: isAIOn 
-            ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.2) 100%)' 
-            : 'linear-gradient(135deg, rgba(107, 114, 128, 0.1) 0%, rgba(75, 85, 99, 0.15) 100%)',
-          border: `2px solid ${isAIOn ? 'rgba(16, 185, 129, 0.5)' : 'rgba(107, 114, 128, 0.3)'}`,
-          borderRadius: '14px',
-          padding: '0.625rem 1.125rem',
-          color: isAIOn ? '#10b981' : '#6b7280',
-          fontSize: '0.875rem',
+          gap: '0.375rem',
+          background: isAIOn
+            ? 'rgba(16, 185, 129, 0.15)'
+            : 'rgba(107, 114, 128, 0.12)',
+          border: `1px solid ${isAIOn ? 'rgba(16, 185, 129, 0.4)' : 'rgba(107, 114, 128, 0.3)'}`,
+          borderRadius: '999px',
+          padding: '0.25rem 0.625rem',
+          color: isAIOn ? '#059669' : '#6b7280',
+          fontSize: '0.6875rem',
           fontWeight: 600,
           cursor: 'pointer',
-          boxShadow: isAIOn ? '0 4px 12px rgba(16, 185, 129, 0.25)' : '0 2px 8px rgba(0, 0, 0, 0.1)',
-          transition: 'all 0.3s ease',
-          backdropFilter: 'blur(10px)'
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = 'translateY(-2px)'
-          e.currentTarget.style.boxShadow = isAIOn 
-            ? '0 6px 16px rgba(16, 185, 129, 0.35)' 
-            : '0 4px 12px rgba(0, 0, 0, 0.15)'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = 'translateY(0)'
-          e.currentTarget.style.boxShadow = isAIOn 
-            ? '0 4px 12px rgba(16, 185, 129, 0.25)' 
-            : '0 2px 8px rgba(0, 0, 0, 0.1)'
+          backdropFilter: 'blur(8px)',
+          letterSpacing: '0.04em',
         }}
       >
-        <span style={{ fontSize: '1.125rem' }}>🤖</span>
-        <span>AI {isAIOn ? 'ON' : 'OFF'}</span>
+        <span style={{ fontSize: '0.8125rem' }}>🤖</span>
+        AI {isAIOn ? 'ON' : 'OFF'}
       </button>
     </div>
   )

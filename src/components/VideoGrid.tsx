@@ -4,9 +4,10 @@ import {
   useTracks,
   useParticipants,
   useLocalParticipant,
+  useIsSpeaking,
   VideoTrack,
 } from '@livekit/components-react'
-import { Track } from 'livekit-client'
+import { Track, type Participant } from 'livekit-client'
 import { getInitials, getAvatarColor } from '../lib/utils'
 
 export default function VideoGrid() {
@@ -162,106 +163,11 @@ export default function VideoGrid() {
 
       {/* Video tracks */}
       {videoTracks.map((track) => (
-        <div
+        <VideoTile
           key={track.participant.sid}
-          data-lk-participant-sid={track.participant.sid}
-          data-lk-participant-identity={track.participant.identity}
-          style={{
-            position: 'relative',
-            background: 'linear-gradient(135deg, #1f2937 0%, #374151 100%)',
-            borderRadius: '24px',
-            overflow: 'hidden',
-            border: track.participant.sid === localParticipant?.sid
-              ? '3px solid var(--accent-primary)'
-              : '2px solid rgba(255, 255, 255, 0.1)',
-            boxShadow: track.participant.sid === localParticipant?.sid
-              ? '0 12px 30px rgba(59, 130, 246, 0.3), 0 0 0 1px rgba(59, 130, 246, 0.1)'
-              : '0 8px 24px rgba(0, 0, 0, 0.2)',
-            minHeight: '300px',
-            aspectRatio: '16/9',
-            transition: 'all 0.3s ease'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)'
-            e.currentTarget.style.boxShadow = track.participant.sid === localParticipant?.sid
-              ? '0 16px 40px rgba(59, 130, 246, 0.4), 0 0 0 1px rgba(59, 130, 246, 0.2)'
-              : '0 12px 32px rgba(0, 0, 0, 0.3)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)'
-            e.currentTarget.style.boxShadow = track.participant.sid === localParticipant?.sid
-              ? '0 12px 30px rgba(59, 130, 246, 0.3), 0 0 0 1px rgba(59, 130, 246, 0.1)'
-              : '0 8px 24px rgba(0, 0, 0, 0.2)'
-          }}
-        >
-          <VideoTrack
-            trackRef={track}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              transform: track.participant.sid === localParticipant?.sid ? 'scaleX(-1)' : 'none'
-            }}
-          />
-          <div style={{
-            position: 'absolute',
-            bottom: '1rem',
-            left: '1rem',
-            background: 'rgba(255, 255, 255, 0.98)',
-            backdropFilter: 'blur(16px)',
-            padding: '0.625rem 1.125rem',
-            borderRadius: '14px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.625rem',
-            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)',
-            border: '1px solid rgba(255, 255, 255, 0.2)'
-          }}>
-            <span style={{ fontSize: '0.9375rem', color: 'var(--text-primary)', fontWeight: 600 }}>
-              {track.participant.name || track.participant.identity}
-            </span>
-            {track.participant.sid === localParticipant?.sid && (
-              <span style={{
-                fontSize: '0.6875rem',
-                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                padding: '3px 8px',
-                borderRadius: '6px',
-                color: '#fff',
-                fontWeight: 600,
-                boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)'
-              }}>
-                Bạn
-              </span>
-            )}
-          </div>
-          <div style={{
-            position: 'absolute',
-            top: '1rem',
-            right: '1rem',
-            background: 'rgba(16, 185, 129, 0.15)',
-            backdropFilter: 'blur(12px)',
-            padding: '0.375rem 0.75rem',
-            borderRadius: '10px',
-            fontSize: '0.8125rem',
-            color: '#10b981',
-            fontWeight: 600,
-            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)',
-            border: '1px solid rgba(16, 185, 129, 0.3)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.375rem'
-          }}>
-            <span style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              background: '#10b981',
-              boxShadow: '0 0 8px #10b981',
-              animation: 'pulse 2s ease-in-out infinite'
-            }}></span>
-            HD
-          </div>
-        </div>
+          track={track}
+          isLocal={track.participant.sid === localParticipant?.sid}
+        />
       ))}
 
       {/* Remote participants without video - show avatars */}
@@ -407,6 +313,98 @@ export default function VideoGrid() {
           </div>
         </div>
       )}
+      </div>
+    </div>
+  )
+}
+
+interface VideoTileProps {
+  track: ReturnType<typeof useTracks>[number]
+  isLocal: boolean
+}
+
+/**
+ * Single video tile. Extracted so we can `useIsSpeaking(participant)` per
+ * tile (hooks need to be at top level of a component). Renders a green
+ * speaking ring when the participant is talking.
+ */
+function VideoTile({ track, isLocal }: VideoTileProps) {
+  const isSpeaking = useIsSpeaking(track.participant as Participant)
+  const speakingColor = '#22c55e'
+
+  return (
+    <div
+      data-lk-participant-sid={track.participant.sid}
+      data-lk-participant-identity={track.participant.identity}
+      style={{
+        position: 'relative',
+        background: 'linear-gradient(135deg, #1f2937 0%, #374151 100%)',
+        borderRadius: 16,
+        overflow: 'hidden',
+        border: isSpeaking
+          ? `3px solid ${speakingColor}`
+          : isLocal
+            ? '2px solid rgba(59, 130, 246, 0.5)'
+            : '1px solid rgba(255, 255, 255, 0.08)',
+        boxShadow: isSpeaking
+          ? `0 0 0 4px ${speakingColor}33, 0 6px 18px rgba(0,0,0,0.25)`
+          : '0 6px 18px rgba(0,0,0,0.2)',
+        minHeight: 240,
+        aspectRatio: '16/9',
+        transition: 'border-color 0.18s ease, box-shadow 0.18s ease',
+      }}
+    >
+      <VideoTrack
+        trackRef={track as never}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          transform: isLocal ? 'scaleX(-1)' : 'none',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 10,
+          left: 10,
+          background: 'rgba(0,0,0,0.55)',
+          backdropFilter: 'blur(8px)',
+          padding: '4px 10px',
+          borderRadius: 8,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          color: '#fff',
+          fontSize: '0.8125rem',
+          fontWeight: 500,
+        }}
+      >
+        {isSpeaking && (
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: speakingColor,
+              boxShadow: `0 0 6px ${speakingColor}`,
+            }}
+          />
+        )}
+        <span>{track.participant.name || track.participant.identity}</span>
+        {isLocal && (
+          <span
+            style={{
+              fontSize: '0.625rem',
+              background: 'rgba(59, 130, 246, 0.6)',
+              padding: '1px 6px',
+              borderRadius: 4,
+              fontWeight: 600,
+            }}
+          >
+            Bạn
+          </span>
+        )}
       </div>
     </div>
   )

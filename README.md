@@ -1,91 +1,66 @@
-# Edu Insight Meet - Final_Edu
+# Edu-Insight Meet
 
-Video call 1-1 real-time với WebRTC + LiveKit Cloud và phát hiện hành vi học sinh bằng AI.
+Video call cho lớp học có AI nhận diện hành vi học sinh, chạy hoàn toàn
+trên trình duyệt. LiveKit (WebRTC) + TensorFlow.js MoveNet.
 
-## Quick Start
+## Quick start
 
-### 1. Cài đặt
 ```bash
-cd edu-insight-meet
 npm install
+cp .env.example .env.local       # điền LiveKit credentials
+npm run dev                      # http://localhost:3010
 ```
 
-### 2. Tạo LiveKit Cloud account (FREE)
-1. Vào https://cloud.livekit.io
-2. Đăng ký tài khoản miễn phí
-3. Tạo project mới
-4. Copy API Key, API Secret, và WebSocket URL
+Lấy LiveKit credentials free tại <https://cloud.livekit.io>. Hướng dẫn chi
+tiết: [LIVEKIT_SETUP.md](LIVEKIT_SETUP.md).
 
-### 3. Cấu hình
-```bash
-cp .env.local.example .env.local
-```
+## Tài khoản test có sẵn
 
-Sửa `.env.local`:
-```
-LIVEKIT_API_KEY=APIxxxxxxxx
-LIVEKIT_API_SECRET=xxxxxxxxxxxxxxxx
-NEXT_PUBLIC_LIVEKIT_URL=wss://your-project.livekit.cloud
-```
+Khi mở `/auth` lần đầu, 4 account được tự seed vào localStorage. Click
+panel quick-fill để login ngay (không cần gõ tay):
 
-### 4. Chạy
-```bash
-npm run dev
-```
+| Email | Mật khẩu | Vai trò |
+|-------|----------|---------|
+| `gv1@test.local` | `test1234` | Giáo viên |
+| `gv2@test.local` | `test1234` | Giáo viên |
+| `hs1@test.local` | `test1234` | Học sinh |
+| `hs2@test.local` | `test1234` | Học sinh |
 
-Mở http://localhost:3000
+## Stack
 
-## Test với 2 máy khác mạng
-
-### Cách 1: Dùng ngrok (đơn giản nhất)
-```bash
-# Terminal 1: chạy app
-npm run dev
-
-# Terminal 2: expose ra internet
-npx ngrok http 3000
-```
-
-Ngrok sẽ cho URL như `https://abc123.ngrok.io` - dùng URL này trên cả 2 máy.
-
-### Cách 2: Deploy lên Vercel
-```bash
-npm i -g vercel
-vercel
-```
-
-## Test checklist
-
-1. Máy 1 (laptop WiFi): Mở URL → Tạo cuộc họp → Copy mã phòng
-2. Máy 2 (điện thoại 4G): Mở URL → Nhập mã phòng → Tham gia
-3. Cả 2 nhìn thấy nhau = SUCCESS
-
-## Debug
-
-- Mở DevTools Console để xem logs
-- Click "Logs" ở góc trái dưới trong room
-- Kiểm tra ICE connection state trong console
-
-## Lỗi thường gặp
-
-| Lỗi | Nguyên nhân | Fix |
-|-----|-------------|-----|
-| Token error | Sai API key/secret | Kiểm tra .env.local |
-| Connection failed | Firewall block | LiveKit Cloud đã có TURN, thử mạng khác |
-| No video | Permission denied | Cho phép camera trong browser |
-| Không thấy người kia | Chưa join cùng room | Kiểm tra mã phòng giống nhau |
+- Next.js 16 + React 18 + TypeScript
+- LiveKit Cloud (WebRTC SFU + TURN, hosted)
+- TensorFlow.js + MoveNet — chạy **trên trình duyệt** (không gửi video lên server)
+- localStorage cho auth, in-memory cho session state
 
 ## Kiến trúc
 
-```
-Browser A ←→ LiveKit Cloud (SFU) ←→ Browser B
-                   ↓
-            TURN servers (built-in)
+Mỗi participant chạy MoveNet trên **video của chính mình**, phát label
+(không phải frame) qua LiveKit data channel. Teacher tổng hợp label mà
+không bao giờ xử lý video remote cho AI. Chi tiết:
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Test 2 máy khác mạng
+
+```bash
+npx ngrok http 3010
 ```
 
-LiveKit Cloud đã bao gồm:
-- STUN servers
-- TURN servers (UDP/TCP/TLS)
-- Global edge network
+Ngrok cho 1 URL public. Mở URL đó trên 2 máy (laptop wifi + điện thoại
+4G chẳng hạn), tạo phòng ở máy 1, join bằng cùng code/link ở máy 2.
 
-Không cần tự cấu hình ICE servers.
+## Tài liệu
+
+- [docs/TESTING.md](docs/TESTING.md) — guide test thống nhất duy nhất
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — kiến trúc + privacy model
+- [docs/ROADMAP.md](docs/ROADMAP.md) — roadmap + những gì đã thử FAIL
+
+## Layout
+
+```
+src/
+├── app/         Next.js routes (auth, dashboard, history, settings, meet/[code], join/[code], api/meet/...)
+├── components/  AIBehaviorDetector, VideoGrid, ControlBar, EngagementChart, MeetingInsights, ...
+├── contexts/    AuthContext, MeetingContext
+└── lib/         ai-detector, behaviorChannel, behaviorStore, crypto, settingsStore, export, utils, logger
+```

@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import DashboardLayout from '../../components/DashboardLayout'
 import { settingsStore } from '../../lib/settingsStore'
-import { database, UserSettings } from '../../lib/database'
 import { useAuth } from '../../contexts/AuthContext'
 import { logger } from '../../lib/logger'
 
@@ -18,68 +17,29 @@ export default function SettingsPage() {
     const [saveMessage, setSaveMessage] = useState('')
 
     useEffect(() => {
-        loadSettings()
+        const s = settingsStore.getSettings()
+        setAiEnabled(s.aiEnabled)
+        setAutoRecord(s.autoRecord)
+        setDetectionSensitivity(s.detectionSensitivity ?? 0.5)
+        setTheme(s.theme)
+        setAutoMute(s.autoMute ?? false)
     }, [user])
 
-    const loadSettings = async () => {
-        try {
-            await database.init()
-            
-            if (user?.id) {
-                // Try to load from database first
-                const dbSettings = await database.getSettings(user.id)
-                
-                if (dbSettings) {
-                    setAiEnabled(dbSettings.aiEnabled)
-                    setAutoRecord(dbSettings.recordingEnabled)
-                    setDetectionSensitivity(dbSettings.detectionSensitivity)
-                    setTheme(dbSettings.theme)
-                    setAutoMute(dbSettings.autoMute)
-                    logger.info('[Settings] Loaded from database')
-                } else {
-                    // Fallback to localStorage
-                    const localSettings = settingsStore.getSettings()
-                    setAiEnabled(localSettings.aiEnabled)
-                    setAutoRecord(localSettings.autoRecord)
-                    logger.info('[Settings] Loaded from localStorage')
-                }
-            }
-        } catch (err) {
-            logger.error('[Settings] Failed to load:', err)
-        }
-    }
-
     const saveSettings = async () => {
-        if (!user?.id) return
-        
         setIsSaving(true)
         setSaveMessage('')
-        
+
         try {
-            const settings: UserSettings = {
-                userId: user.id,
-                aiEnabled,
-                detectionSensitivity,
-                theme,
-                autoMute,
-                recordingEnabled: autoRecord
-            }
-            
-            // Save to database
-            await database.saveSettings(settings)
-            
-            // Also save to localStorage for quick access
             settingsStore.updateSettings({
                 aiEnabled,
                 autoRecord,
                 detectionSensitivity,
-                theme
+                theme,
+                autoMute,
             })
-            
+
             setSaveMessage('✅ Đã lưu cài đặt')
-            logger.info('[Settings] Saved successfully')
-            
-            // Clear message after 2 seconds
+            logger.info('[Settings] Saved')
             setTimeout(() => setSaveMessage(''), 2000)
         } catch (err) {
             logger.error('[Settings] Failed to save:', err)
@@ -202,102 +162,99 @@ export default function SettingsPage() {
                             </div>
                         </div>
 
-                        <label style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
+                        <div style={{
                             padding: '0.75rem',
                             background: 'var(--bg-secondary)',
                             borderRadius: '8px',
-                            cursor: 'pointer'
+                            opacity: 0.55,
                         }}>
-                            <div>
-                                <span style={{ fontWeight: 500 }}>Lưu lịch sử tự động</span>
-                                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                                    Tự động lưu lịch sử hành vi vào database
-                                </p>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div>
+                                    <span style={{ fontWeight: 500 }}>
+                                        Lưu lịch sử tự động
+                                        <span style={{ marginLeft: 8, fontSize: '0.6875rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(107,114,128,0.2)', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                            SẮP CÓ
+                                        </span>
+                                    </span>
+                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                                        Hiện tại lịch sử luôn được lưu khi AI bật
+                                    </p>
+                                </div>
+                                <input type="checkbox" disabled checked style={{ width: '20px', height: '20px' }} />
                             </div>
-                            <input
-                                type="checkbox"
-                                checked={autoRecord}
-                                onChange={(e) => handleToggleRecord(e.target.checked)}
-                                disabled={isSaving}
-                                style={{ width: '20px', height: '20px', accentColor: 'var(--accent-primary)' }}
-                            />
-                        </label>
+                        </div>
                     </div>
                 </div>
 
                 {/* Meeting Settings */}
                 <div className="card animate-fadeIn" style={{ animationDelay: '0.1s' }}>
                     <h2 className="section-title">🎥 Cài đặt cuộc họp</h2>
-                    
-                    <label style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
+
+                    <div style={{
                         padding: '0.75rem',
                         background: 'var(--bg-secondary)',
                         borderRadius: '8px',
-                        cursor: 'pointer'
+                        opacity: 0.55,
                     }}>
-                        <div>
-                            <span style={{ fontWeight: 500 }}>Tự động tắt mic khi vào</span>
-                            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                                Mic sẽ tự động tắt khi tham gia cuộc họp
-                            </p>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div>
+                                <span style={{ fontWeight: 500 }}>
+                                    Tự động tắt mic khi vào
+                                    <span style={{ marginLeft: 8, fontSize: '0.6875rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(107,114,128,0.2)', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                        SẮP CÓ
+                                    </span>
+                                </span>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                                    Hiện tại mic được giữ nguyên trạng thái từ trang chuẩn bị
+                                </p>
+                            </div>
+                            <input type="checkbox" disabled checked={autoMute} style={{ width: '20px', height: '20px' }} />
                         </div>
-                        <input
-                            type="checkbox"
-                            checked={autoMute}
-                            onChange={(e) => handleToggleAutoMute(e.target.checked)}
-                            disabled={isSaving}
-                            style={{ width: '20px', height: '20px', accentColor: 'var(--accent-primary)' }}
-                        />
-                    </label>
+                    </div>
                 </div>
 
                 {/* Display Settings */}
                 <div className="card animate-fadeIn" style={{ animationDelay: '0.2s' }}>
-                    <h2 className="section-title">🎨 Giao diện</h2>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <h2 className="section-title">
+                        🎨 Giao diện
+                        <span style={{ marginLeft: 8, fontSize: '0.6875rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(107,114,128,0.2)', color: 'var(--text-muted)', fontWeight: 600 }}>
+                            SẮP CÓ
+                        </span>
+                    </h2>
+                    <div style={{ display: 'flex', gap: '0.5rem', opacity: 0.55 }}>
                         <button
-                            onClick={() => handleThemeChange('light')}
-                            disabled={isSaving}
+                            disabled
                             style={{
                                 flex: 1,
                                 padding: '0.75rem',
                                 borderRadius: '8px',
-                                border: `2px solid ${theme === 'light' ? 'var(--accent-primary)' : 'var(--border-color)'}`,
-                                background: theme === 'light' ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-secondary)',
+                                border: '2px solid var(--accent-primary)',
+                                background: 'rgba(59, 130, 246, 0.1)',
                                 color: 'var(--text-primary)',
-                                cursor: 'pointer',
                                 fontWeight: 500,
-                                transition: 'all 0.2s'
+                                cursor: 'not-allowed',
                             }}
                         >
                             ☀️ Sáng
                         </button>
                         <button
-                            onClick={() => handleThemeChange('dark')}
-                            disabled={isSaving}
+                            disabled
                             style={{
                                 flex: 1,
                                 padding: '0.75rem',
                                 borderRadius: '8px',
-                                border: `2px solid ${theme === 'dark' ? 'var(--accent-primary)' : 'var(--border-color)'}`,
-                                background: theme === 'dark' ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-secondary)',
+                                border: '2px solid var(--border-color)',
+                                background: 'var(--bg-secondary)',
                                 color: 'var(--text-primary)',
-                                cursor: 'pointer',
                                 fontWeight: 500,
-                                transition: 'all 0.2s'
+                                cursor: 'not-allowed',
                             }}
                         >
                             🌙 Tối
                         </button>
                     </div>
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.5rem' }}>
-                        Đang sử dụng: {theme === 'light' ? 'Giao diện sáng' : 'Giao diện tối'}
+                        Chế độ tối sẽ có ở phiên bản kế tiếp
                     </p>
                 </div>
 
@@ -311,7 +268,7 @@ export default function SettingsPage() {
                             Ứng dụng họp video với AI phát hiện hành vi học tập.
                         </p>
                         <p style={{ marginTop: '0.25rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                            💾 Dữ liệu lưu an toàn trên thiết bị của bạn (IndexedDB)
+                            🔒 Dữ liệu lưu local trên trình duyệt của bạn; AI nhận diện chạy ngay trên thiết bị, không gửi video lên server
                         </p>
                     </div>
                 </div>

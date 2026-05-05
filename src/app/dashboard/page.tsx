@@ -9,25 +9,39 @@ import { useMeeting } from '../../contexts/MeetingContext'
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { user, logout } = useAuth()
+  const { user, isLoading, logout } = useAuth()
   const { createMeeting } = useMeeting()
 
   useEffect(() => {
-    if (!user) {
+    if (!isLoading && !user) {
       router.push('/auth')
     }
-  }, [user, router])
+  }, [user, isLoading, router])
+
+  if (isLoading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+      }}>
+        <div style={{ color: 'var(--text-muted)' }}>Đang xác thực...</div>
+      </div>
+    )
+  }
 
   if (!user) {
     return null
   }
 
-  const handleCreateMeeting = (code: string) => {
-    createMeeting(code, user.id, user.name, user.role)
+  const handleCreateMeeting = async (code: string) => {
+    return createMeeting(code, user.id, user.name, user.role)
   }
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     router.push('/auth')
   }
 

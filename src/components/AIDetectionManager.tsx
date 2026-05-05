@@ -1,20 +1,23 @@
 'use client'
 
-import {
-  useParticipants,
-  useLocalParticipant,
-} from '@livekit/components-react'
+import { useParticipants, useLocalParticipant } from '@livekit/components-react'
 import dynamic from 'next/dynamic'
 
-const AIBehaviorDetector = dynamic(
-  () => import('./AIBehaviorDetector'),
-  { ssr: false }
-)
+const AIBehaviorDetector = dynamic(() => import('./AIBehaviorDetector'), {
+  ssr: false,
+})
 
-const StudentsBehaviorPanel = dynamic(
-  () => import('./StudentsBehaviorPanel'),
-  { ssr: false }
-)
+const BehaviorReceiver = dynamic(() => import('./BehaviorReceiver'), {
+  ssr: false,
+})
+
+const DistractionAlerts = dynamic(() => import('./DistractionAlerts'), {
+  ssr: false,
+})
+
+const StudentsBehaviorPanel = dynamic(() => import('./StudentsBehaviorPanel'), {
+  ssr: false,
+})
 
 interface MeetSettings {
   userName: string
@@ -24,53 +27,38 @@ interface MeetSettings {
   userId?: string
 }
 
-/** Renders AI detectors for all participants (for teacher) or self (for student) */
+/**
+ * Mounts the AI pipeline appropriate to the current role:
+ * - Everyone runs MoveNet on their OWN local video (privacy-by-design).
+ * - Teachers additionally subscribe to remote participants' broadcasted labels
+ *   via the LiveKit data channel (no remote-video processing on teacher CPU).
+ */
 export function AIDetectionManager({ settings }: { settings: MeetSettings }) {
-  const participants = useParticipants()
-  const { localParticipant } = useLocalParticipant()
-  
-  // AI luôn hiển thị VÀ phân tích ngay cả khi 1 người
-  const shouldAnalyze = true
-  
-  if (settings.userRole === 'student') {
-    return (
-      <AIBehaviorDetector 
-        enabled={shouldAnalyze} 
+  return (
+    <>
+      <AIBehaviorDetector
+        enabled={true}
         userId={settings.userId}
         userName={settings.userName}
       />
-    )
-  }
-  
-  if (settings.userRole === 'teacher') {
-    return (
-      <>
-        {participants.map((participant) => {
-          if (participant.sid === localParticipant?.sid) return null
-          
-          return (
-            <AIBehaviorDetector
-              key={participant.sid}
-              enabled={shouldAnalyze}
-              userId={participant.sid}
-              userName={participant.name || participant.identity}
-              participantSid={participant.sid}
-            />
-          )
-        })}
-      </>
-    )
-  }
-  
-  return null
+      {settings.userRole === 'teacher' && (
+        <>
+          <BehaviorReceiver />
+          <DistractionAlerts />
+        </>
+      )}
+    </>
+  )
 }
 
-/** Wrapper to pass filtered participants to StudentsBehaviorPanel */
+/** Wrapper to pass remote participants to the teacher's class overview panel. */
 export function StudentsBehaviorPanelWrapper() {
   const participants = useParticipants()
   const { localParticipant } = useLocalParticipant()
-  
-  const remoteParticipants = participants.filter(p => p.sid !== localParticipant?.sid)
-  
+
+  const remoteParticipants = participants.filter(
+    (p) => p.sid !== localParticipant?.sid
+  )
+
   return <StudentsBehaviorPanel participants={remoteParticipants} />
 }

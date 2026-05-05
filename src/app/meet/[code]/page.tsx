@@ -21,7 +21,7 @@ export default function PreJoinPage() {
   const router = useRouter()
   const params = useParams()
   const code = params.code as string
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const { joinMeeting } = useMeeting()
 
   const [userName, setUserName] = useState('')
@@ -39,12 +39,16 @@ export default function PreJoinPage() {
   const streamRef = useRef<MediaStream | null>(null)
 
   useEffect(() => {
+    if (authLoading) return
     if (!user) {
-      router.push('/auth')
+      // Not logged in → treat as guest, route to the simple join page.
+      // Teachers who share /meet/[code] links and students who paste them
+      // both end up at the right place.
+      router.push(`/join/${code}`)
     } else {
       setUserName(user.name)
     }
-  }, [user, router])
+  }, [user, authLoading, router, code])
 
   const addLog = useCallback((message: string, type: LogEntry['type'] = 'info') => {
     const time = new Date().toLocaleTimeString()
@@ -141,25 +145,33 @@ export default function PreJoinPage() {
     setIsJoining(true)
     addLog('Đang tham gia phòng...', 'info')
 
-    joinMeeting(code, user.id, user.name, user.role)
+    const result = await joinMeeting(code, user.id, user.name, user.role)
+    if (!result.ok) {
+      addLog(`✗ ${result.error || 'Không thể tham gia'}`, 'error')
+      setIsJoining(false)
+      return
+    }
     addLog('✓ Đã tham gia phòng', 'success')
 
     if (videoRef.current) {
       videoRef.current.srcObject = null
     }
-    
-    sessionStorage.setItem('meetSettings', JSON.stringify({
-      userName: user.name,
-      cameraEnabled,
-      micEnabled,
-      userRole: user.role,
-      userId: user.id
-    }))
+
+    sessionStorage.setItem(
+      'meetSettings',
+      JSON.stringify({
+        userName: user.name,
+        cameraEnabled,
+        micEnabled,
+        userRole: user.role,
+        userId: user.id,
+      })
+    )
 
     addLog('Chuyển đến phòng họp...', 'success')
-    
-    await new Promise(resolve => setTimeout(resolve, 50))
-    
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
     router.push(`/meet/${code}/room`)
   }
 

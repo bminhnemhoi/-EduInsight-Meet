@@ -11,6 +11,7 @@ import { logger } from '../../../../lib/logger'
 import VideoGrid from '../../../../components/VideoGrid'
 import ControlBar from '../../../../components/ControlBar'
 import RoomHeader from '../../../../components/RoomHeader'
+import ErrorBoundary from '../../../../components/ErrorBoundary'
 import { AIDetectionManager, StudentsBehaviorPanelWrapper } from '../../../../components/AIDetectionManager'
 
 const BehaviorHistoryPanel = dynamic(
@@ -24,6 +25,8 @@ interface MeetSettings {
   micEnabled: boolean
   userRole?: 'teacher' | 'student'
   userId?: string
+  /** True for anonymous join via /join/[code] — no login required. */
+  guest?: boolean
 }
 
 // Room Content Component
@@ -35,24 +38,45 @@ function RoomContent({ settings, code }: { settings: MeetSettings; code: string 
   const [isConnected, setIsConnected] = useState(false)
 
   useEffect(() => {
+    let cancelled = false
+
     async function fetchToken() {
-      try {
-        const res = await fetch('/api/meet/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomName: code, participantName: settings.userName })
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Failed to get token')
-        setToken(data.token)
-        logger.info('[ROOM] Token acquired')
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown error'
-        setError(message)
-        logger.error('[ROOM] Token error:', message)
+      const isGuest = !!settings.guest
+      const endpoint = isGuest ? '/api/meet/guest-token' : '/api/meet/token'
+      const body = isGuest
+        ? { roomName: code, displayName: settings.userName }
+        : { roomName: code, participantName: settings.userName }
+
+      const maxAttempts = 3
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+          if (cancelled) return
+          setToken(data.token)
+          logger.info('[ROOM] Token acquired (guest:', isGuest, ')')
+          return
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          logger.error(`[ROOM] Token attempt ${attempt}/${maxAttempts}:`, message)
+          if (attempt === maxAttempts) {
+            if (!cancelled) setError(message)
+            return
+          }
+          await new Promise((r) => setTimeout(r, 500 * attempt))
+        }
       }
     }
+
     fetchToken()
+    return () => {
+      cancelled = true
+    }
   }, [code, settings.userName])
 
   const handleDisconnect = useCallback(() => {
@@ -213,7 +237,10 @@ export default function RoomPage() {
     if (!mounted) return
     const stored = sessionStorage.getItem('meetSettings')
     if (!stored) {
-      router.push(`/meet/${code}`)
+      // No setup data → bounce to the guest join page so anyone landing
+      // here (refresh, copied URL) gets a sane prejoin flow regardless of
+      // whether they are logged in.
+      router.push(`/join/${code}`)
       return
     }
     setSettings(JSON.parse(stored) as MeetSettings)
@@ -233,5 +260,75 @@ export default function RoomPage() {
     )
   }
 
-  return <RoomContent settings={settings} code={code} />
+  return (
+    <ErrorBoundary
+      fallback={
+        <div
+          style={{
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+            padding: '2rem',
+          }}
+        >
+          <div
+            style={{
+              background: 'white',
+              borderRadius: '1rem',
+              padding: '2rem',
+              maxWidth: '440px',
+              textAlign: 'center',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.1)',
+            }}
+          >
+            <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>⚠️</div>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+              Phòng họp gặp lỗi
+            </h2>
+            <p
+              style={{ color: '#6b7280', marginBottom: '1.5rem', fontSize: '0.875rem' }}
+            >
+              Có thể do mất kết nối hoặc AI bị lỗi. Bạn có thể tải lại hoặc về trang chủ.
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+              <button
+                onClick={() => window.location.reload()}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.9375rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Tải lại
+              </button>
+              <button
+                onClick={() => (window.location.href = '/')}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  background: '#e5e7eb',
+                  color: '#1f2937',
+                  border: 'none',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.9375rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Trang chủ
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+    >
+      <RoomContent settings={settings} code={code} />
+    </ErrorBoundary>
+  )
 }

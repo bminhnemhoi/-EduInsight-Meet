@@ -9,6 +9,8 @@ export interface BehaviorResult {
   color: string
   bgColor: string
   type: 'positive' | 'negative' | 'neutral' | 'warning'
+  /** 0..1 — combination of keypoint detection quality and rule strength. */
+  confidence: number
 }
 
 interface Point {
@@ -61,6 +63,10 @@ class AIDetector {
     }
 
     try {
+      // Run pose estimation on the full video element. MoveNet handles its
+      // own internal resize and keeps keypoint precision much higher than a
+      // pre-canvas downsample. Adaptive FPS in AIBehaviorDetector keeps CPU
+      // sane on slower devices.
       const poses = await this.detector.estimatePoses(video)
       
       if (!poses || poses.length === 0 || !poses[0].keypoints) {
@@ -69,7 +75,8 @@ class AIDetector {
           emoji: '❓',
           color: '#64748b',
           bgColor: 'rgba(100, 116, 139, 0.2)',
-          type: 'neutral'
+          type: 'neutral',
+          confidence: 0,
         }
       }
 
@@ -103,9 +110,17 @@ class AIDetector {
         emoji: '❓',
         color: '#64748b',
         bgColor: 'rgba(100, 116, 139, 0.2)',
-        type: 'neutral'
+        type: 'neutral',
+        confidence: 0,
       }
     }
+
+    // Aggregate keypoint confidence as a baseline. Rule strength multiplies
+    // it when set below.
+    const facialKeypoints = [nose, leftEye, rightEye, leftEar, rightEar]
+    const baseConf =
+      facialKeypoints.reduce((s, k) => s + (k?.score ?? 0), 0) /
+      facialKeypoints.length
 
     const shoulderY = (leftShoulder.y + rightShoulder.y) / 2
     const shoulderX = (leftShoulder.x + rightShoulder.x) / 2
@@ -127,19 +142,23 @@ class AIDetector {
         emoji: '😴',
         color: '#a855f7',
         bgColor: 'rgba(168, 85, 247, 0.2)',
-        type: 'negative'
+        type: 'negative',
+        confidence: Math.min(1, baseConf * 1.0),
       }
     }
 
     // Distracted: head turned away
     const noseOffset = Math.abs(nose.x - shoulderX)
     if (shoulderWidth > 0 && noseOffset > shoulderWidth * 0.3) {
+      // Stronger off-center → higher confidence the head is actually turned.
+      const offsetRatio = Math.min(1, noseOffset / shoulderWidth)
       return {
         label: 'Mất tập trung',
         emoji: '👀',
         color: '#f43f5e',
         bgColor: 'rgba(244, 63, 94, 0.2)',
-        type: 'negative'
+        type: 'negative',
+        confidence: Math.min(1, baseConf * (0.5 + offsetRatio)),
       }
     }
 
@@ -147,17 +166,20 @@ class AIDetector {
     if ((leftEar.score ?? 0) > 0.3 && (rightEar.score ?? 0) > 0.3) {
       const earDiff = Math.abs(leftEar.y - rightEar.y)
       if (shoulderWidth > 0 && earDiff > shoulderWidth * 0.2) {
+        const tiltRatio = Math.min(1, earDiff / shoulderWidth)
         return {
           label: 'Nghiêng đầu',
           emoji: '⚠️',
           color: '#f59e0b',
           bgColor: 'rgba(245, 158, 11, 0.2)',
-          type: 'warning'
+          type: 'warning',
+          confidence: Math.min(1, baseConf * (0.4 + tiltRatio * 1.2)),
         }
       }
     }
 
-    // Looking down (phone)
+    // Looking down (phone). Original pixel-space heuristic — works on full
+    // video resolution.
     if ((leftEar.score ?? 0) > 0.3 && (rightEar.score ?? 0) > 0.3) {
       if (nose.y > leftEar.y + 30 && nose.y > rightEar.y + 30) {
         return {
@@ -165,19 +187,21 @@ class AIDetector {
           emoji: '📱',
           color: '#f43f5e',
           bgColor: 'rgba(244, 63, 94, 0.2)',
-          type: 'negative'
+          type: 'negative',
+          confidence: 1,
         }
       }
     }
 
-    // Raising hand
+    // Raising hand — original pixel-space heuristic.
     if ((leftWrist.score ?? 0) > 0.3 && leftWrist.y < leftShoulder.y - 50) {
       return {
         label: 'Giơ tay',
         emoji: '✋',
         color: '#10b981',
         bgColor: 'rgba(16, 185, 129, 0.2)',
-        type: 'positive'
+        type: 'positive',
+        confidence: 1,
       }
     }
     if ((rightWrist.score ?? 0) > 0.3 && rightWrist.y < rightShoulder.y - 50) {
@@ -186,18 +210,20 @@ class AIDetector {
         emoji: '✋',
         color: '#10b981',
         bgColor: 'rgba(16, 185, 129, 0.2)',
-        type: 'positive'
+        type: 'positive',
+        confidence: 1,
       }
     }
 
-    // Head gestures
+    // Head gestures.
     if (headGesture === 'NOD') {
       return {
         label: 'Gật đầu',
         emoji: '👍',
         color: '#10b981',
         bgColor: 'rgba(16, 185, 129, 0.2)',
-        type: 'positive'
+        type: 'positive',
+        confidence: 1,
       }
     }
 
@@ -207,7 +233,8 @@ class AIDetector {
         emoji: '👎',
         color: '#f97316',
         bgColor: 'rgba(249, 115, 22, 0.2)',
-        type: 'warning'
+        type: 'warning',
+        confidence: 1,
       }
     }
 
@@ -217,7 +244,8 @@ class AIDetector {
       emoji: '✅',
       color: '#3b82f6',
       bgColor: 'rgba(59, 130, 246, 0.2)',
-      type: 'positive'
+      type: 'positive',
+      confidence: 1,
     }
   }
 
@@ -244,6 +272,7 @@ class AIDetector {
     const xRange = xMax - xMin
     const yRange = yMax - yMin
 
+    // Original pixel-space tunings — work on full video resolution.
     if (yRange > 20 && xRange < 10) return 'NOD'
     if (xRange > 25 && yRange < 10) return 'SHAKE'
     if (xRange < 5 && yRange < 5) return 'STILL'

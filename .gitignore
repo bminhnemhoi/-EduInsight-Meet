@@ -3,9 +3,12 @@ node_modules
 .env
 .env.local
 .env*.local
+.env.production
+.env.development
 *.log
 .DS_Store
 .vercel
 coverage/
 
-.vercel
+# TypeScript build cache (regenerated on every build)
+tsconfig.tsbuildinfo

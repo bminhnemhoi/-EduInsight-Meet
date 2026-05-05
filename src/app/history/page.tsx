@@ -2,9 +2,32 @@
 
 import { useState, useEffect } from 'react'
 import DashboardLayout from '../../components/DashboardLayout'
-import BehaviorHistoryPanel from '../../components/BehaviorHistoryPanel'
-import { database, BehaviorEntry, Meeting } from '../../lib/database'
-import { logger } from '../../lib/logger'
+import EngagementChart from '../../components/EngagementChart'
+import MeetingInsights from '../../components/MeetingInsights'
+import { buildBehaviorCSV, downloadCSV } from '../../lib/export'
+import { behaviorStore } from '../../lib/behaviorStore'
+import { classifyBehavior } from '../../lib/utils'
+
+interface MeetingView {
+    id: string
+    roomCode: string
+    teacherName: string
+    startTime: number
+    endTime?: number
+    participantCount: number
+}
+
+interface BehaviorView {
+    id: string
+    userId: string
+    userName: string
+    behavior: string
+    emoji: string
+    color: string
+    type: 'positive' | 'negative' | 'neutral' | 'warning'
+    timestamp: number
+    bgColor?: string
+}
 
 export default function HistoryPage() {
     const [stats, setStats] = useState({
@@ -15,85 +38,106 @@ export default function HistoryPage() {
         warningBehaviors: 0,
         neutralBehaviors: 0
     })
-    const [meetings, setMeetings] = useState<Meeting[]>([])
+    const [meetings, setMeetings] = useState<MeetingView[]>([])
     const [selectedMeeting, setSelectedMeeting] = useState<string | null>(null)
-    const [behaviors, setBehaviors] = useState<BehaviorEntry[]>([])
+    const [behaviors, setBehaviors] = useState<BehaviorView[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all')
 
-    // Load meetings and stats
+    // Load behaviors of the CURRENT session from in-memory store.
+    // Cross-session history is not persisted in the local-auth model — if
+    // the user wants to keep a record, they export CSV before leaving the
+    // meeting room.
     useEffect(() => {
-        loadData()
+        loadCurrentSession()
     }, [])
 
-    // Load behaviors when meeting selected
     useEffect(() => {
-        if (selectedMeeting) {
-            loadBehaviors(selectedMeeting)
-        }
+        if (selectedMeeting) loadCurrentSession()
     }, [selectedMeeting])
 
-    const loadData = async () => {
+    const loadCurrentSession = () => {
         setIsLoading(true)
-        try {
-            await database.init()
-            
-            // Get all meetings
-            const allMeetings = await database.getAllMeetings()
-            setMeetings(allMeetings)
-            
-            // Calculate overall stats from all meetings
-            let totalPositive = 0
-            let totalNegative = 0
-            let totalWarning = 0
-            let totalNeutral = 0
-            let totalBehaviors = 0
-            
-            for (const meeting of allMeetings) {
-                const meetingStats = await database.getStatistics(meeting.id)
-                totalPositive += meetingStats.positiveCount
-                totalNegative += meetingStats.negativeCount
-                totalWarning += meetingStats.warningCount
-                totalNeutral += meetingStats.neutralCount
-                totalBehaviors += meetingStats.totalBehaviors
-            }
-            
+        const all = behaviorStore.getBehaviors()
+        if (all.length === 0) {
+            setMeetings([])
+            setBehaviors([])
             setStats({
-                meetingsCount: allMeetings.length,
-                totalBehaviors,
-                positiveBehaviors: totalPositive,
-                negativeBehaviors: totalNegative,
-                warningBehaviors: totalWarning,
-                neutralBehaviors: totalNeutral
+                meetingsCount: 0,
+                totalBehaviors: 0,
+                positiveBehaviors: 0,
+                negativeBehaviors: 0,
+                warningBehaviors: 0,
+                neutralBehaviors: 0,
             })
-            
-            // Auto-select most recent meeting
-            if (allMeetings.length > 0) {
-                setSelectedMeeting(allMeetings[0].id)
-            }
-            
-            logger.info('[History] Loaded', allMeetings.length, 'meetings')
-        } catch (err) {
-            logger.error('[History] Failed to load data:', err)
-        } finally {
             setIsLoading(false)
+            return
         }
-    }
 
-    const loadBehaviors = async (meetingId: string) => {
-        try {
-            const meetingBehaviors = await database.getBehaviorsByMeeting(meetingId)
-            setBehaviors(meetingBehaviors)
-            logger.info('[History] Loaded', meetingBehaviors.length, 'behaviors for meeting', meetingId)
-        } catch (err) {
-            logger.error('[History] Failed to load behaviors:', err)
+        // Build a single virtual "current session" entry from the in-memory store.
+        const sorted = [...all].sort((a, b) => a.timestamp - b.timestamp)
+        const start = sorted[0].timestamp
+        const end = sorted[sorted.length - 1].timestamp
+        const teacherName = 'Buổi học hiện tại'
+
+        const adapted: BehaviorView[] = sorted.map((b, i) => {
+            const cls = classifyBehavior(b.label)
+            const type: BehaviorView['type'] =
+                cls === 'focused'
+                    ? 'positive'
+                    : cls === 'distracted'
+                        ? 'warning'
+                        : cls === 'sleeping'
+                            ? 'negative'
+                            : 'neutral'
+            return {
+                id: `${b.userId}-${b.timestamp}-${i}`,
+                userId: b.userId,
+                userName: b.userName,
+                behavior: b.label,
+                emoji: b.emoji,
+                color: b.color,
+                type,
+                timestamp: b.timestamp,
+            }
+        })
+
+        const userIds = new Set(adapted.map((a) => a.userId))
+        const meetingView: MeetingView = {
+            id: 'current_session',
+            roomCode: 'live',
+            teacherName,
+            startTime: start,
+            endTime: end,
+            participantCount: userIds.size,
         }
+
+        let pos = 0, neg = 0, warn = 0, neu = 0
+        for (const a of adapted) {
+            if (a.type === 'positive') pos++
+            else if (a.type === 'negative') neg++
+            else if (a.type === 'warning') warn++
+            else neu++
+        }
+
+        setMeetings([meetingView])
+        setSelectedMeeting('current_session')
+        setBehaviors(adapted)
+        setStats({
+            meetingsCount: 1,
+            totalBehaviors: adapted.length,
+            positiveBehaviors: pos,
+            negativeBehaviors: neg,
+            warningBehaviors: warn,
+            neutralBehaviors: neu,
+        })
+        setIsLoading(false)
     }
 
     const getFilteredMeetings = () => {
         const now = Date.now()
         const oneDayMs = 24 * 60 * 60 * 1000
-        
+
         switch (dateFilter) {
             case 'today':
                 return meetings.filter(m => now - m.startTime < oneDayMs)
@@ -336,10 +380,72 @@ export default function HistoryPage() {
                             </div>
                         </div>
 
+                        {/* Insights */}
+                        {selectedMeeting && behaviors.length > 0 && (
+                            <div className="card animate-fadeIn" style={{ marginBottom: '1.5rem' }}>
+                                <h2 className="section-title">💡 Insights</h2>
+                                <div style={{ marginTop: '1rem' }}>
+                                    <MeetingInsights events={behaviors} />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Engagement Chart */}
+                        {selectedMeeting && behaviors.length > 0 && (
+                            <div className="card animate-fadeIn" style={{ marginBottom: '1.5rem' }}>
+                                <h2 className="section-title">📈 Biểu đồ tập trung theo thời gian</h2>
+                                <div style={{ marginTop: '1rem' }}>
+                                    <EngagementChart events={behaviors.map(b => ({ timestamp: b.timestamp, type: b.type }))} />
+                                </div>
+                            </div>
+                        )}
+
                         {/* Behavior Timeline */}
                         {selectedMeeting && behaviors.length > 0 && (
                             <div className="card">
-                                <h2 className="section-title">📜 Timeline hành vi ({behaviors.length})</h2>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                    <h2 className="section-title" style={{ marginBottom: 0 }}>
+                                        📜 Timeline hành vi ({behaviors.length})
+                                    </h2>
+                                    <button
+                                        onClick={() => {
+                                            const meeting = meetings.find(m => m.id === selectedMeeting)
+                                            const title = meeting
+                                                ? `Phòng ${meeting.roomCode} - ${meeting.teacherName}`
+                                                : 'Báo cáo'
+                                            const csv = buildBehaviorCSV(
+                                                title,
+                                                behaviors.map(b => ({
+                                                    timestamp: b.timestamp,
+                                                    userName: b.userName,
+                                                    behavior: b.behavior,
+                                                    type: b.type,
+                                                }))
+                                            )
+                                            const filename = meeting
+                                                ? `bao-cao-${meeting.roomCode}-${new Date(meeting.startTime).toISOString().slice(0, 10)}.csv`
+                                                : `bao-cao-${Date.now()}.csv`
+                                            downloadCSV(filename, csv)
+                                        }}
+                                        style={{
+                                            padding: '0.5rem 1rem',
+                                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                            color: '#fff',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            fontSize: '0.875rem',
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.375rem',
+                                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+                                        }}
+                                        title="Tải file CSV để gửi phụ huynh / báo cáo nhà trường"
+                                    >
+                                        📥 Xuất CSV
+                                    </button>
+                                </div>
                                 <div style={{ marginTop: '1rem', maxHeight: '600px', overflowY: 'auto' }}>
                                     {behaviors.map((behavior, index) => (
                                         <div

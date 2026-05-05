@@ -2,7 +2,8 @@
 
 import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth, UserRole } from '../../contexts/AuthContext'
+import Link from 'next/link'
+import { useAuth, UserRole, TEST_ACCOUNT_HINTS } from '../../contexts/AuthContext'
 
 export default function AuthPage() {
   const router = useRouter()
@@ -16,19 +17,38 @@ export default function AuthPage() {
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [progressMsg, setProgressMsg] = useState('')
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    setProgressMsg('')
     setLoading(true)
 
-    try {
-      let success = false
+    // Progressive feedback so user knows the app isn't frozen on slow links.
+    const t1 = setTimeout(() => setProgressMsg('Đang kết nối...'), 2000)
+    const t2 = setTimeout(
+      () => setProgressMsg('Mạng hơi chậm, đang chờ...'),
+      6000
+    )
+    const t3 = setTimeout(
+      () => setProgressMsg('Vẫn đang thử... bạn có thể đợi hoặc kiểm tra mạng.'),
+      15000
+    )
+    const clearProgress = () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+      clearTimeout(t3)
+      setProgressMsg('')
+    }
 
+    try {
       if (isLogin) {
-        success = await login(formData.email, formData.password)
-        if (!success) {
-          setError('Email hoặc mật khẩu không đúng')
+        const result = await login(formData.email, formData.password)
+        if (!result.ok) {
+          setError(result.error || 'Đăng nhập thất bại')
+        } else {
+          router.push('/dashboard')
         }
       } else {
         if (!formData.name.trim()) {
@@ -36,18 +56,27 @@ export default function AuthPage() {
           setLoading(false)
           return
         }
-        success = await register(formData.name, formData.email, formData.password, formData.role)
-        if (!success) {
-          setError('Email đã tồn tại')
+        const result = await register(
+          formData.name,
+          formData.email,
+          formData.password,
+          formData.role
+        )
+        if (!result.ok) {
+          setError(result.error || 'Đăng ký thất bại')
+        } else if (result.needsEmailConfirmation) {
+          setError(
+            'Đăng ký thành công. Vui lòng kiểm tra email để xác thực, sau đó đăng nhập.'
+          )
+          setIsLogin(true)
+        } else {
+          router.push('/dashboard')
         }
       }
-
-      if (success) {
-        router.push('/dashboard')
-      }
-    } catch {
-      setError('Đã có lỗi xảy ra')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Đã có lỗi xảy ra')
     } finally {
+      clearProgress()
       setLoading(false)
     }
   }
@@ -231,9 +260,89 @@ export default function AuthPage() {
           >
             {loading ? 'Đang xử lý...' : (isLogin ? 'Đăng nhập' : 'Đăng ký')}
           </button>
+
+          {progressMsg && (
+            <div
+              style={{
+                marginTop: '0.625rem',
+                padding: '0.5rem 0.75rem',
+                fontSize: '0.8125rem',
+                color: '#5a67d8',
+                background: 'rgba(102, 126, 234, 0.08)',
+                borderRadius: '0.375rem',
+                textAlign: 'center',
+              }}
+            >
+              {progressMsg}
+            </div>
+          )}
         </form>
 
-        <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
+        {isLogin && (
+          <div
+            style={{
+              marginTop: '1.25rem',
+              paddingTop: '1rem',
+              borderTop: '1px solid #edf2f7',
+            }}
+          >
+            <p
+              style={{
+                fontSize: '0.75rem',
+                color: '#a0aec0',
+                marginBottom: '0.625rem',
+                textAlign: 'center',
+              }}
+            >
+              Tài khoản test có sẵn (click để dùng):
+            </p>
+            <div style={{ display: 'grid', gap: '0.375rem' }}>
+              {TEST_ACCOUNT_HINTS.map((acc) => (
+                <button
+                  key={acc.email}
+                  type="button"
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      email: acc.email,
+                      password: acc.password,
+                    })
+                  }
+                  style={{
+                    padding: '0.5rem 0.75rem',
+                    background: '#f7fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 6,
+                    fontSize: '0.8125rem',
+                    color: '#2d3748',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                  title={`Email: ${acc.email}\nMật khẩu: ${acc.password}`}
+                >
+                  <span>
+                    {acc.role === 'teacher' ? '👨‍🏫' : '🧒'} {acc.name}
+                  </span>
+                  <code
+                    style={{
+                      fontSize: '0.6875rem',
+                      color: '#718096',
+                      fontFamily: 'monospace',
+                    }}
+                  >
+                    {acc.email}
+                  </code>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginTop: '1.5rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <button
             onClick={() => {
               setIsLogin(!isLogin)
