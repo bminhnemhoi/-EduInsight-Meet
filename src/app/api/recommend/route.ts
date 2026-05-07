@@ -122,7 +122,9 @@ export async function POST(req: NextRequest) {
         generationConfig: {
           responseMimeType: 'application/json',
           temperature: 0.4,
-          maxOutputTokens: 1024,
+          // 2048 leaves room for full Vietnamese output (≈ 1.5x token-per-char
+          // vs English) with all sections populated. 1024 was getting cut.
+          maxOutputTokens: 2048,
         },
       }),
     })
