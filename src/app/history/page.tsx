@@ -5,6 +5,7 @@ import DashboardLayout from '../../components/DashboardLayout'
 import EngagementChart from '../../components/EngagementChart'
 import MeetingInsights from '../../components/MeetingInsights'
 import SessionRecommendations from '../../components/SessionRecommendations'
+import CompactTimeline from '../../components/CompactTimeline'
 import { buildBehaviorCSV, downloadCSV } from '../../lib/export'
 import { behaviorStore } from '../../lib/behaviorStore'
 import { classifyBehavior } from '../../lib/utils'
@@ -462,49 +463,7 @@ export default function HistoryPage() {
                                     </button>
                                 </div>
                                 <div style={{ marginTop: '1rem', maxHeight: '600px', overflowY: 'auto' }}>
-                                    {behaviors.map((behavior, index) => (
-                                        <div
-                                            key={behavior.id}
-                                            style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '1rem',
-                                                padding: '0.75rem',
-                                                marginBottom: '0.5rem',
-                                                borderRadius: '8px',
-                                                background: behavior.bgColor || 'var(--bg-secondary)',
-                                                border: `1px solid ${behavior.color}40`
-                                            }}
-                                        >
-                                            <div style={{ fontSize: '1.5rem' }}>{behavior.emoji}</div>
-                                            <div style={{ flex: 1 }}>
-                                                <div style={{ fontWeight: 600, color: behavior.color }}>
-                                                    {behavior.behavior}
-                                                </div>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                                    {behavior.userName} • {new Date(behavior.timestamp).toLocaleTimeString('vi-VN')}
-                                                </div>
-                                            </div>
-                                            <div style={{
-                                                fontSize: '0.75rem',
-                                                padding: '0.25rem 0.5rem',
-                                                borderRadius: '4px',
-                                                background: behavior.type === 'positive' ? 'rgba(16, 185, 129, 0.2)' :
-                                                           behavior.type === 'negative' ? 'rgba(239, 68, 68, 0.2)' :
-                                                           behavior.type === 'warning' ? 'rgba(245, 158, 11, 0.2)' :
-                                                           'rgba(100, 116, 139, 0.2)',
-                                                color: behavior.type === 'positive' ? 'var(--success)' :
-                                                       behavior.type === 'negative' ? 'var(--danger)' :
-                                                       behavior.type === 'warning' ? 'var(--warning)' :
-                                                       'var(--text-muted)'
-                                            }}>
-                                                {behavior.type === 'positive' ? '✅ Tích cực' :
-                                                 behavior.type === 'negative' ? '❌ Tiêu cực' :
-                                                 behavior.type === 'warning' ? '⚠️ Cảnh báo' :
-                                                 '➖ Trung lập'}
-                                            </div>
-                                        </div>
-                                    ))}
+                                    <CompactTimeline events={behaviors} />
                                 </div>
                             </div>
                         )}

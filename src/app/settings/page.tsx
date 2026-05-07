@@ -29,23 +29,21 @@ export default function SettingsPage() {
         setAiRecommendations(s.aiRecommendationsEnabled ?? false)
     }, [user])
 
-    const saveSettings = async () => {
+    /**
+     * Persist a partial update directly to the store using the explicit new
+     * value, instead of reading React state which has not flushed yet
+     * (setState is async — calling saveSettings right after a setX in the
+     * same handler reads the OLD value, which is the bug we just hit).
+     */
+    const persistPartial = (
+        partial: Partial<Parameters<typeof settingsStore.updateSettings>[0]>
+    ) => {
         setIsSaving(true)
         setSaveMessage('')
-
         try {
-            settingsStore.updateSettings({
-                aiEnabled,
-                autoRecord,
-                detectionSensitivity,
-                theme,
-                autoMute,
-                faceAnalysisEnabled: faceAnalysis,
-                aiRecommendationsEnabled: aiRecommendations,
-            })
-
+            settingsStore.updateSettings(partial)
             setSaveMessage('✅ Đã lưu cài đặt')
-            logger.info('[Settings] Saved')
+            logger.info('[Settings] Saved', Object.keys(partial))
             setTimeout(() => setSaveMessage(''), 2000)
         } catch (err) {
             logger.error('[Settings] Failed to save:', err)
@@ -55,40 +53,42 @@ export default function SettingsPage() {
         }
     }
 
-    const handleToggleFaceAnalysis = async (checked: boolean) => {
+    const handleToggleFaceAnalysis = (checked: boolean) => {
         setFaceAnalysis(checked)
-        await saveSettings()
+        persistPartial({ faceAnalysisEnabled: checked })
     }
 
-    const handleToggleRecommendations = async (checked: boolean) => {
+    const handleToggleRecommendations = (checked: boolean) => {
         setAiRecommendations(checked)
-        await saveSettings()
+        persistPartial({ aiRecommendationsEnabled: checked })
     }
 
-    const handleToggleAI = async (checked: boolean) => {
+    const handleToggleAI = (checked: boolean) => {
         setAiEnabled(checked)
-        await saveSettings()
+        persistPartial({ aiEnabled: checked })
     }
 
-    const handleToggleRecord = async (checked: boolean) => {
+    const handleToggleRecord = (checked: boolean) => {
         setAutoRecord(checked)
-        await saveSettings()
+        persistPartial({ autoRecord: checked })
     }
 
-    const handleToggleAutoMute = async (checked: boolean) => {
+    const handleToggleAutoMute = (checked: boolean) => {
         setAutoMute(checked)
-        await saveSettings()
+        persistPartial({ autoMute: checked })
     }
 
     const handleSensitivityChange = (value: number) => {
         setDetectionSensitivity(value)
     }
+    const handleSensitivityCommit = (value: number) => {
+        persistPartial({ detectionSensitivity: value })
+    }
 
-    const handleThemeChange = async (newTheme: 'light' | 'dark') => {
+    const handleThemeChange = (newTheme: 'light' | 'dark') => {
         setTheme(newTheme)
-        // Apply theme immediately (you can implement theme switching logic here)
         document.documentElement.setAttribute('data-theme', newTheme)
-        await saveSettings()
+        persistPartial({ theme: newTheme })
     }
 
     return (
@@ -167,8 +167,8 @@ export default function SettingsPage() {
                                     step="0.1"
                                     value={detectionSensitivity}
                                     onChange={(e) => handleSensitivityChange(parseFloat(e.target.value))}
-                                    onMouseUp={() => saveSettings()}
-                                    onTouchEnd={() => saveSettings()}
+                                    onMouseUp={() => handleSensitivityCommit(detectionSensitivity)}
+                                    onTouchEnd={() => handleSensitivityCommit(detectionSensitivity)}
                                     disabled={isSaving}
                                     style={{ flex: 1, accentColor: 'var(--accent-primary)' }}
                                 />
