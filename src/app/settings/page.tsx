@@ -13,6 +13,8 @@ export default function SettingsPage() {
     const [detectionSensitivity, setDetectionSensitivity] = useState(0.5)
     const [theme, setTheme] = useState<'light' | 'dark'>('light')
     const [autoMute, setAutoMute] = useState(false)
+    const [faceAnalysis, setFaceAnalysis] = useState(false)
+    const [aiRecommendations, setAiRecommendations] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
     const [saveMessage, setSaveMessage] = useState('')
 
@@ -23,6 +25,8 @@ export default function SettingsPage() {
         setDetectionSensitivity(s.detectionSensitivity ?? 0.5)
         setTheme(s.theme)
         setAutoMute(s.autoMute ?? false)
+        setFaceAnalysis(s.faceAnalysisEnabled ?? false)
+        setAiRecommendations(s.aiRecommendationsEnabled ?? false)
     }, [user])
 
     const saveSettings = async () => {
@@ -36,6 +40,8 @@ export default function SettingsPage() {
                 detectionSensitivity,
                 theme,
                 autoMute,
+                faceAnalysisEnabled: faceAnalysis,
+                aiRecommendationsEnabled: aiRecommendations,
             })
 
             setSaveMessage('✅ Đã lưu cài đặt')
@@ -47,6 +53,16 @@ export default function SettingsPage() {
         } finally {
             setIsSaving(false)
         }
+    }
+
+    const handleToggleFaceAnalysis = async (checked: boolean) => {
+        setFaceAnalysis(checked)
+        await saveSettings()
+    }
+
+    const handleToggleRecommendations = async (checked: boolean) => {
+        setAiRecommendations(checked)
+        await saveSettings()
     }
 
     const handleToggleAI = async (checked: boolean) => {
@@ -183,6 +199,71 @@ export default function SettingsPage() {
                                 <input type="checkbox" disabled checked style={{ width: '20px', height: '20px' }} />
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                {/* Advanced AI (Tier 1 + 3) */}
+                <div className="card animate-fadeIn" style={{ animationDelay: '0.05s' }}>
+                    <h2 className="section-title">✨ AI nâng cao</h2>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.75rem' }}>
+                        <label style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.75rem',
+                            background: 'var(--bg-secondary)',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                        }}>
+                            <div>
+                                <span style={{ fontWeight: 500 }}>
+                                    Phân tích cảm xúc & độ buồn ngủ
+                                    <span style={{ marginLeft: 8, fontSize: '0.6875rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.15)', color: '#059669', fontWeight: 600 }}>
+                                        MEDIAPIPE
+                                    </span>
+                                </span>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                                    Bổ sung nhận diện gương mặt (vui/buồn/ngạc nhiên) + đo độ mở mắt (EAR) để phát hiện buồn ngủ chính xác hơn pose. Chạy hoàn toàn trên trình duyệt, không gửi ảnh đi đâu.
+                                </p>
+                            </div>
+                            <input
+                                type="checkbox"
+                                checked={faceAnalysis}
+                                onChange={(e) => handleToggleFaceAnalysis(e.target.checked)}
+                                disabled={isSaving}
+                                style={{ width: '20px', height: '20px', accentColor: 'var(--accent-primary)' }}
+                            />
+                        </label>
+
+                        <label style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.75rem',
+                            background: 'var(--bg-secondary)',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                        }}>
+                            <div>
+                                <span style={{ fontWeight: 500 }}>
+                                    Khuyến nghị AI cuối buổi học
+                                    <span style={{ marginLeft: 8, fontSize: '0.6875rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(139, 92, 246, 0.15)', color: '#7c3aed', fontWeight: 600 }}>
+                                        GEMINI
+                                    </span>
+                                </span>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                                    Sau buổi học, vào trang Lịch sử → click "Phân tích" để Gemini AI đọc engagement timeline và đưa ra gợi ý cho lần sau (vd: nên giải lao phút mấy, học sinh nào cần chú ý). Chỉ gửi text summary, không có video/face.
+                                </p>
+                            </div>
+                            <input
+                                type="checkbox"
+                                checked={aiRecommendations}
+                                onChange={(e) => handleToggleRecommendations(e.target.checked)}
+                                disabled={isSaving}
+                                style={{ width: '20px', height: '20px', accentColor: 'var(--accent-primary)' }}
+                            />
+                        </label>
                     </div>
                 </div>
 

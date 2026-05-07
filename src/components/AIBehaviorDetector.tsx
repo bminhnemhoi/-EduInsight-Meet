@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRoomContext } from '@livekit/components-react'
 import { aiDetector, BehaviorResult } from '../lib/ai-detector'
+import { faceDetector, emotionLabel, type FaceSignals } from '../lib/face-detector'
 import { logger } from '../lib/logger'
 import { settingsStore } from '../lib/settingsStore'
 import { useMeeting } from '../contexts/MeetingContext'
@@ -17,6 +18,55 @@ interface Props {
   enabled?: boolean
   userId?: string
   userName?: string
+}
+
+/**
+ * Combine MoveNet's pose-based result with optional MediaPipe face signals.
+ * Strategy:
+ *   - If eyes have been closed for ≥2s (drowsiness EAR), upgrade label to
+ *     "Đang ngủ" (more reliable than pose alone).
+ *   - Append a small emotion suffix to listening/focus labels so teachers
+ *     see the emotional tone (e.g. "Đang lắng nghe · Vui 😊").
+ *   - Pose label otherwise wins.
+ *
+ * The function is pure — pass face=null to short-circuit and return the
+ * pose result unchanged. This keeps the baseline pipeline unaffected when
+ * the face detector hasn't loaded or the user disabled the feature.
+ */
+function fuseFaceIntoBehavior(
+  pose: BehaviorResult,
+  face: FaceSignals | null
+): BehaviorResult {
+  if (!face) return pose
+
+  // Eye-closure-driven drowsiness override. We don't track time-window here
+  // (that requires component state), but a single instantaneous closed-eye
+  // is a stronger signal than the pose heuristic, so override regardless.
+  if (face.eyesClosed) {
+    return {
+      label: 'Đang ngủ',
+      emoji: '😴',
+      color: '#a855f7',
+      bgColor: 'rgba(168, 85, 247, 0.2)',
+      type: 'negative',
+      confidence: 0.9,
+    }
+  }
+
+  // Emotion suffix only on neutral/positive pose labels — don't confuse a
+  // "Cúi đầu" warning by appending "Vui".
+  if (face.emotion !== 'neutral' && face.emotionIntensity > 0.35) {
+    const { label: emoLabel, emoji: emoEmoji } = emotionLabel(face.emotion)
+    if (emoLabel && (pose.type === 'positive' || pose.type === 'neutral')) {
+      return {
+        ...pose,
+        label: `${pose.label} · ${emoLabel}`,
+        emoji: `${pose.emoji}${emoEmoji}`,
+      }
+    }
+  }
+
+  return pose
 }
 
 /**
@@ -139,24 +189,35 @@ export default function AIBehaviorDetector({
 
     if (!result) return
 
-    setBehavior(result)
+    // Optional Tier 1 enhancement: fuse face signals (emotion + drowsiness
+    // from EAR) into the pose-based label. Gated by Settings toggle so the
+    // baseline MoveNet pipeline is unaffected when off.
+    const settings = settingsStore.getSettings()
+    let face: FaceSignals | null = null
+    if (settings.faceAnalysisEnabled && faceDetector.isReady()) {
+      face = faceDetector.detect(video, performance.now())
+    }
+
+    const fused = fuseFaceIntoBehavior(result, face)
+
+    setBehavior(fused)
 
     // Commit transition immediately when the label changes — no smoothing
     // or confidence gate, so the badge tracks MoveNet output as quickly as
     // it can detect.
-    if (result.label === committedLabelRef.current) return
-    committedLabelRef.current = result.label
+    if (fused.label === committedLabelRef.current) return
+    committedLabelRef.current = fused.label
 
     if (userId && userName) {
-      broadcastBehavior(result, userId, userName)
+      broadcastBehavior(fused, userId, userName)
 
       await saveBehavior({
         userId,
         userName,
-        behavior: result.label,
-        emoji: result.emoji,
-        color: result.color,
-        type: result.type,
+        behavior: fused.label,
+        emoji: fused.emoji,
+        color: fused.color,
+        type: fused.type,
         timestamp: Date.now(),
       })
     }
@@ -209,6 +270,14 @@ export default function AIBehaviorDetector({
         if (cancelled) return
         setIsLoading(false)
         logger.info('[AI] Detector ready')
+
+        // Lazy-init face detector in the background if user has it enabled.
+        // Doesn't block pose detection — face signals fuse in once ready.
+        if (settingsStore.getSettings().faceAnalysisEnabled) {
+          faceDetector.initialize().catch((err) => {
+            logger.warn('[FaceDetector] init failed:', err)
+          })
+        }
 
         let retries = 0
         const maxRetries = 10

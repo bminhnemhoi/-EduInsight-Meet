@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { getInitials, classifyBehavior, formatTimeVN, formatTimeShortVN } from '../lib/utils'
 import { behaviorStore } from '../lib/behaviorStore'
+import { voiceActivityStore, formatSpeakingTime } from '../lib/voiceActivity'
 
 export interface StudentBehavior {
   userId: string
@@ -465,6 +466,36 @@ export default function StudentsBehaviorPanel({ participants = [] }: Props) {
             }}>
               Tổng số lần phát hiện: {getStudentStats(selectedStudent.userId).total}
             </div>
+
+            {/* Tier 2: voice activity */}
+            {(() => {
+              const va = voiceActivityStore.forIdentity(selectedStudent.userId)
+              if (!va || va.totalSpeakingMs < 500) return null
+              const sessionMs = voiceActivityStore.sessionDurationMs()
+              const pct = sessionMs > 0
+                ? Math.round((va.totalSpeakingMs / sessionMs) * 100)
+                : 0
+              return (
+                <div style={{
+                  marginTop: '0.625rem',
+                  padding: '0.5rem 0.75rem',
+                  background: 'rgba(59, 130, 246, 0.08)',
+                  border: '1px solid rgba(59, 130, 246, 0.2)',
+                  borderRadius: 8,
+                  fontSize: '0.75rem',
+                  color: 'var(--text-secondary)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 8,
+                }}>
+                  <span>🗣️ Đã nói: <strong>{formatSpeakingTime(va.totalSpeakingMs)}</strong></span>
+                  <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
+                    {pct}% buổi học
+                  </span>
+                </div>
+              )
+            })()}
           </div>
 
           {/* Student Behavior History */}

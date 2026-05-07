@@ -8,6 +8,10 @@ export interface Settings {
   theme: 'light' | 'dark'
   detectionSensitivity?: number
   autoMute?: boolean
+  /** Tier 1: enable MediaPipe FaceLandmarker for emotion + drowsiness fusion. */
+  faceAnalysisEnabled?: boolean
+  /** Tier 3: enable Gemini end-of-session recommendations in History. */
+  aiRecommendationsEnabled?: boolean
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -16,6 +20,8 @@ const DEFAULT_SETTINGS: Settings = {
   theme: 'light',
   detectionSensitivity: 0.5,
   autoMute: false,
+  faceAnalysisEnabled: false,
+  aiRecommendationsEnabled: false,
 }
 
 type Listener = (s: Settings) => void

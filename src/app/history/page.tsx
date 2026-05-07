@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import DashboardLayout from '../../components/DashboardLayout'
 import EngagementChart from '../../components/EngagementChart'
 import MeetingInsights from '../../components/MeetingInsights'
+import SessionRecommendations from '../../components/SessionRecommendations'
 import { buildBehaviorCSV, downloadCSV } from '../../lib/export'
 import { behaviorStore } from '../../lib/behaviorStore'
 import { classifyBehavior } from '../../lib/utils'
@@ -389,6 +390,20 @@ export default function HistoryPage() {
                                 </div>
                             </div>
                         )}
+
+                        {/* Tier 3: Gemini AI Recommendations */}
+                        {selectedMeeting && behaviors.length > 0 && (() => {
+                            const meeting = meetings.find(m => m.id === selectedMeeting)
+                            const durationMs = meeting
+                                ? (meeting.endTime ?? Date.now()) - meeting.startTime
+                                : 0
+                            return (
+                                <SessionRecommendations
+                                    events={behaviors}
+                                    meetingDurationMs={durationMs}
+                                />
+                            )
+                        })()}
 
                         {/* Engagement Chart */}
                         {selectedMeeting && behaviors.length > 0 && (

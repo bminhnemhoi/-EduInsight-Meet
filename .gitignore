@@ -12,3 +12,5 @@ coverage/
 
 # TypeScript build cache (regenerated on every build)
 tsconfig.tsbuildinfo
+
+.vercel

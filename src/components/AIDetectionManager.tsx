@@ -15,6 +15,10 @@ const DistractionAlerts = dynamic(() => import('./DistractionAlerts'), {
   ssr: false,
 })
 
+const VoiceActivityTracker = dynamic(() => import('./VoiceActivityTracker'), {
+  ssr: false,
+})
+
 const StudentsBehaviorPanel = dynamic(() => import('./StudentsBehaviorPanel'), {
   ssr: false,
 })
@@ -41,6 +45,7 @@ export function AIDetectionManager({ settings }: { settings: MeetSettings }) {
         userId={settings.userId}
         userName={settings.userName}
       />
+      <VoiceActivityTracker />
       {settings.userRole === 'teacher' && (
         <>
           <BehaviorReceiver />

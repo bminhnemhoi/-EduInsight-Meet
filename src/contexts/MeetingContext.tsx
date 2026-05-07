@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { UserRole } from './AuthContext'
 import { behaviorStore } from '../lib/behaviorStore'
+import { voiceActivityStore } from '../lib/voiceActivity'
 
 interface BehaviorPayload {
   userId: string
@@ -58,12 +59,14 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
   const createMeeting: MeetingContextType['createMeeting'] = async (code) => {
     setCurrentMeetingId(code)
     behaviorStore.reset()
+    voiceActivityStore.reset()
     return { ok: true }
   }
 
   const joinMeeting: MeetingContextType['joinMeeting'] = async (code) => {
     setCurrentMeetingId(code)
     behaviorStore.reset()
+    voiceActivityStore.reset()
     return { ok: true }
   }
 
