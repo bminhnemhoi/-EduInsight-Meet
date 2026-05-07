@@ -39,7 +39,7 @@ function rateLimited(ip: string): boolean {
   return hits.length > RATE_LIMIT
 }
 
-const SYSTEM_PROMPT = `Bạn là trợ lý sư phạm AI cho giáo viên Việt Nam dạy online.
+const TEACHER_PROMPT = `Bạn là trợ lý sư phạm AI cho giáo viên Việt Nam dạy online.
 Bạn nhận được tóm tắt 1 buổi học bao gồm: timeline engagement, danh sách học sinh, hành vi quan sát được, thời gian phát biểu.
 
 NHIỆM VỤ: Trả lời JSON đúng schema sau (không markdown, không text giải thích bên ngoài JSON):
@@ -60,6 +60,28 @@ GUIDELINES:
 - Mỗi field <= 200 ký tự, ngôn ngữ Tiếng Việt tự nhiên
 - Đề xuất phải CỤ THỂ và có ích (không generic như "tăng tương tác")
 - Nếu data không đủ kết luận, trả "summary" giải thích lý do và mảng rỗng cho keyMoments/perStudentInsights/nextSessionTips`
+
+const STUDENT_PROMPT = `Bạn là gia sư AI thân thiện đang giúp 1 học sinh Việt Nam tự nhìn lại buổi học vừa qua của em.
+Bạn nhận được tóm tắt hành vi và mức độ tập trung CỦA RIÊNG học sinh này trong 1 buổi học online.
+
+NHIỆM VỤ: Trả lời JSON đúng schema sau (không markdown, không text bên ngoài JSON):
+{
+  "overallEngagement": <số 0-100, là engagement % của riêng em>,
+  "summary": "<1-2 câu tóm tắt buổi học của em, giọng văn động viên, ngôi 'em'>",
+  "keyMoments": [
+    { "timeOffset": "<vd: phút 5-10>", "observation": "<em đã làm gì>", "suggestion": "<gợi ý cải thiện cho em>" }
+  ],
+  "perStudentInsights": [
+    { "name": "<tên em>", "pattern": "<mẫu hành vi tốt/cần cải thiện>", "recommendation": "<gợi ý cá nhân>" }
+  ],
+  "nextSessionTips": ["<bí quyết 1 cho em>", "<bí quyết 2>", "<bí quyết 3>"]
+}
+
+GUIDELINES:
+- Giọng văn ấm áp, khích lệ, gọi học sinh là "em"
+- Tối đa 3 keyMoments, 1 perStudentInsights (chỉ về em), 3 nextSessionTips
+- Tip phải hành động được (vd "thử giải lao 5 phút sau mỗi 25 phút"), không phải lời khuyên chung chung
+- Nếu thấy hành vi tốt, KHEN cụ thể; nếu cần cải thiện, gợi ý nhẹ nhàng không phán xét`
 
 interface SessionSummary {
   durationMinutes?: number
@@ -95,6 +117,7 @@ export async function POST(req: NextRequest) {
 
     const body = (await req.json().catch(() => null)) as {
       summary?: SessionSummary
+      mode?: 'teacher' | 'student'
     } | null
     if (!body || typeof body !== 'object' || !body.summary) {
       return NextResponse.json(
@@ -102,6 +125,10 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
+
+    const mode: 'teacher' | 'student' =
+      body.mode === 'student' ? 'student' : 'teacher'
+    const systemPrompt = mode === 'student' ? STUDENT_PROMPT : TEACHER_PROMPT
 
     // Format the summary as plain text — keeps the prompt small and clear.
     const userPrompt = formatSummaryAsText(body.summary)
@@ -111,7 +138,7 @@ export async function POST(req: NextRequest) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         systemInstruction: {
-          parts: [{ text: SYSTEM_PROMPT }],
+          parts: [{ text: systemPrompt }],
         },
         contents: [
           {

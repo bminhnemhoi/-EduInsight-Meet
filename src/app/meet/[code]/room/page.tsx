@@ -13,6 +13,7 @@ import ControlBar from '../../../../components/ControlBar'
 import RoomHeader from '../../../../components/RoomHeader'
 import ErrorBoundary from '../../../../components/ErrorBoundary'
 import { AIDetectionManager, StudentsBehaviorPanelWrapper } from '../../../../components/AIDetectionManager'
+import EndOfClassController from '../../../../components/EndOfClassController'
 
 const BehaviorHistoryPanel = dynamic(
   () => import('../../../../components/BehaviorHistoryPanel'),
@@ -201,10 +202,23 @@ function RoomContent({ settings, code }: { settings: MeetSettings; code: string 
       </div>
 
       <AIDetectionManager settings={settings} />
-      
+
       {settings.userRole === 'teacher' && <StudentsBehaviorPanelWrapper />}
 
-      <ControlBar roomCode={code} onDisconnect={handleDisconnect} />
+      <EndOfClassController
+        role={settings.userRole === 'teacher' ? 'teacher' : 'student'}
+        userId={settings.userId}
+        userName={settings.userName}
+        onDisconnect={handleDisconnect}
+      >
+        {({ onEndClass }) => (
+          <ControlBar
+            roomCode={code}
+            onDisconnect={handleDisconnect}
+            onEndClass={settings.userRole === 'teacher' ? onEndClass : undefined}
+          />
+        )}
+      </EndOfClassController>
 
       <RoomAudioRenderer />
 

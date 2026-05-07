@@ -11,9 +11,12 @@ import { logger } from '../lib/logger'
 interface Props {
   roomCode: string
   onDisconnect: () => void
+  /** Teacher-only: shown next to disconnect button. Triggers end-of-class
+   * broadcast to all participants. */
+  onEndClass?: () => void
 }
 
-export default function ControlBar({ roomCode, onDisconnect }: Props) {
+export default function ControlBar({ roomCode, onDisconnect, onEndClass }: Props) {
   const [copied, setCopied] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
   const room = useRoomContext()
@@ -157,6 +160,33 @@ export default function ControlBar({ roomCode, onDisconnect }: Props) {
       </div>
 
       {/* Custom Disconnect Button */}
+      {onEndClass && (
+        <button
+          onClick={onEndClass}
+          style={{
+            height: 52,
+            padding: '0 1rem',
+            borderRadius: 26,
+            border: 'none',
+            background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            fontSize: '0.875rem',
+            fontWeight: 600,
+            color: '#fff',
+            boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)',
+            transition: 'all 0.18s ease',
+          }}
+          title="Kết thúc buổi học cho cả lớp"
+        >
+          <span style={{ fontSize: '1rem' }}>🔔</span>
+          Kết thúc buổi
+        </button>
+      )}
+
       <button
         onClick={handleDisconnect}
         disabled={isDisconnecting}
@@ -179,7 +209,7 @@ export default function ControlBar({ roomCode, onDisconnect }: Props) {
           boxShadow: '0 4px 14px rgba(239, 68, 68, 0.35)',
           transition: 'all 0.18s ease',
         }}
-        title="Rời phòng"
+        title="Rời phòng (chỉ bạn rời, lớp vẫn tiếp tục)"
       >
         <span style={{ fontSize: '1.125rem' }}>{isDisconnecting ? '⏳' : '📵'}</span>
         Rời phòng
