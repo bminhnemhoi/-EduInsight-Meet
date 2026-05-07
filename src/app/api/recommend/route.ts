@@ -15,7 +15,7 @@ import { logger } from '../../../lib/logger'
  * out → comfortable inside the 1500/day Gemini Flash free quota.
  */
 
-const GEMINI_MODEL = 'gemini-2.5-flash'
+const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash'
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
 
 const RATE_WINDOW_MS = 60_000
